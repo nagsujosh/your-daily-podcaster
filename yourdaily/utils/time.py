@@ -35,8 +35,14 @@ def get_date_range(days_back: int = 1) -> tuple[str, str]:
 def parse_gnews_date(date_str: str) -> Optional[str]:
     """Parse GNews date format and return YYYY-MM-DD."""
     try:
-        # GNews typically returns dates in various formats
-        # Try common formats
+        # GNews returns dates in format like "Tue, 22 Jul 2025 19:14:23 GMT"
+        try:
+            date_obj = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %Z")
+            return date_obj.strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+
+        # Try other common formats as fallback
         formats = [
             "%Y-%m-%dT%H:%M:%SZ",
             "%Y-%m-%dT%H:%M:%S.%fZ",

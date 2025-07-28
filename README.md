@@ -14,6 +14,9 @@ An AI-powered automated daily podcast generator that creates personalized audio 
 
 ### 1. Install the Package
 ```bash
+# Make sure you have a recent version of pip (21.3+)
+python -m pip install --upgrade pip
+
 # Install in development mode
 pip install -e .
 ```

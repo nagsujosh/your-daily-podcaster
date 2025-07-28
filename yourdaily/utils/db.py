@@ -59,6 +59,20 @@ class DatabaseManager:
 
         logger.info("Databases initialized successfully")
 
+    def article_exists(self, url: str) -> bool:
+        """Check if an article with the given URL already exists."""
+        try:
+            with sqlite3.connect(self.search_db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM search_index WHERE url = ?",
+                    (url,)
+                )
+                count = cursor.fetchone()[0]
+                return count > 0
+        except Exception as e:
+            logger.error(f"Error checking if article exists: {e}")
+            return False
+
     def insert_search_result(
         self,
         topic: str,

@@ -38,7 +38,9 @@ class NewsFetcher:
             language="en",
             country="US",
             max_results=20,
-            period="1d",  # Last 24 hours
+            period="7d",
+            start_date=None,
+            end_date=None,
         )
 
         # Set API key if available
@@ -47,7 +49,7 @@ class NewsFetcher:
             self.gnews.api_key = api_key
             self.logger.info("Using GNews API key")
         else:
-            self.logger.warning("No GNews API key found - using free tier")
+            self.logger.info("No GNews API key found - using free tier")
 
     def load_topics(self) -> List[str]:
         """Load topics from Topics.md file."""
@@ -131,9 +133,16 @@ class NewsFetcher:
     def store_articles(self, articles: List[Dict[str, Any]]) -> int:
         """Store articles in the database."""
         stored_count = 0
+        skipped_count = 0
 
         for article in articles:
             try:
+                # Check if article already exists
+                if self.db.article_exists(article["url"]):
+                    self.logger.debug(f"Article already exists, skipping: {article['title'][:50]}...")
+                    skipped_count += 1
+                    continue
+
                 success = self.db.insert_search_result(
                     topic=article["topic"],
                     title=article["title"],
@@ -154,6 +163,7 @@ class NewsFetcher:
             except Exception as e:
                 self.logger.error(f"Error storing article: {e}")
 
+        self.logger.info(f"Storage complete: {stored_count} new articles stored, {skipped_count} duplicates skipped")
         return stored_count
 
     def run(self) -> Dict[str, Any]:
