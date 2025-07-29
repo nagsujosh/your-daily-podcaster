@@ -29,7 +29,12 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg
+        sudo apt-get install -y ffmpeg wget gnupg2
+        # Install Chrome for browser automation
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
 
     - name: Create virtual environment
       run: |
@@ -50,7 +55,6 @@ jobs:
       run: |
         echo "GEMINI_KEY=${{ secrets.GEMINI_KEY }}" >> .env
         echo "GCLOUD_TTS_CREDS=${{ secrets.GCLOUD_TTS_CREDS }}" >> .env
-        echo "GNEWS_API_KEY=${{ secrets.GNEWS_API_KEY }}" >> .env
         echo "SEARCH_DB_PATH=${{ env.SEARCH_DB_PATH }}" >> .env
         echo "ARTICLE_DB_PATH=${{ env.ARTICLE_DB_PATH }}" >> .env
         echo "AUDIO_OUTPUT_DIR=${{ env.AUDIO_OUTPUT_DIR }}" >> .env
@@ -69,7 +73,6 @@ jobs:
         daily-podcaster
       env:
         GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
-        GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
         GOOGLE_APPLICATION_CREDENTIALS: gcloud_creds.json
 
     - name: Upload generated files as artifacts

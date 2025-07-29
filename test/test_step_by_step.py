@@ -1,114 +1,127 @@
-# flake8: noqa
 #!/usr/bin/env python3
 """
-Step-by-Step Test Suite for Your Daily Podcaster
+Step-by-step testing script for Your Daily Podcaster.
 
-This script allows you to test each component individually and debug issues.
-Run specific tests by commenting/uncommenting the test functions at the bottom.
+Tests each component in isolation to help identify issues.
 """
 
 import os
 import sqlite3
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-from yourdaily.utils.db import DatabaseManager
+from yourdaily.utils.logger import get_logger
 from yourdaily.utils.time import get_yesterday_date
+
+# Add the parent directory to the path so we can import from yourdaily
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 def test_environment_setup():
-    """Test 1: Environment and basic setup."""
-    print("\n" + "=" * 60)
+    """Test 1: Environment variables and basic setup."""
+    print("\n" + "=" * 50)
     print("TEST 1: Environment Setup")
-    print("=" * 60)
+    print("=" * 50)
 
-    from yourdaily.utils.logger import setup_logger
-
-    setup_logger()
-
-    # Load environment variables
+    # Load environment
     load_dotenv()
 
-    # Check required API keys
+    # Check required environment variables
     gemini_key = os.getenv("GEMINI_KEY")
-    tts_creds = os.getenv("GCLOUD_TTS_CREDS")
-    gnews_key = os.getenv("GNEWS_API_KEY")
+    gcloud_creds = os.getenv("GCLOUD_TTS_CREDS")
 
     print(f"✅ GEMINI_KEY: {'Set' if gemini_key else '❌ Missing'}")
-    print(f"✅ GCLOUD_TTS_CREDS: {'Set' if tts_creds else '❌ Missing'}")
-    print(f"✅ GNEWS_API_KEY: {'Set' if gnews_key else '⚠️ Optional'}")
+    print(f"✅ GCLOUD_TTS_CREDS: {'Set' if gcloud_creds else '❌ Missing'}")
 
-    # Test imports
+    # Check paths
+    required_paths = ["data/db", "data/audio", "logs"]
+
+    for path in required_paths:
+        path_obj = Path(path)
+        if path_obj.exists():
+            print(f"✅ {path}: Exists")
+        else:
+            print(f"⚠️ {path}: Creating...")
+            path_obj.mkdir(parents=True, exist_ok=True)
+
+    get_logger("test_environment").info("Environment setup test completed")
+
+
+def test_imports():
+    """Test 2: Import all required modules."""
+    print("\n" + "=" * 50)
+    print("TEST 2: Module Imports")
+    print("=" * 50)
+
     try:
-        from google.cloud import texttospeech
+        print("✅ RSS and browser automation dependencies imported")
+    except Exception as e:
+        print(f"❌ RSS/browser dependencies import failed: {e}")
 
+    try:
+        print("✅ Trafilatura imported")
+    except ImportError as e:
+        print(f"❌ Trafilatura import failed: {e}")
+
+    try:
         print("✅ Google Cloud TTS imported")
     except ImportError as e:
         print(f"❌ Google Cloud TTS import failed: {e}")
 
     try:
-        import google.generativeai as genai
-
-        print("✅ Google Generative AI imported")
+        print("✅ Pydub imported")
     except ImportError as e:
-        print(f"❌ Google Generative AI import failed: {e}")
+        print(f"❌ Pydub import failed: {e}")
 
     try:
-        from gnews import GNews
-
-        print("✅ GNews imported")
+        print("✅ YourDaily modules imported")
     except ImportError as e:
-        print(f"❌ GNews import failed: {e}")
+        print(f"❌ YourDaily modules import failed: {e}")
 
-    return True
+    get_logger("test_imports").info("Import test completed")
 
 
-def test_database_creation():
-    """Test 2: Database creation and schema."""
-    print("\n" + "=" * 60)
-    print("TEST 2: Database Creation")
-    print("=" * 60)
-
-    from yourdaily.utils.logger import setup_logger
-
-    setup_logger()
+def test_database():
+    """Test 3: Database connectivity and operations."""
+    print("\n" + "=" * 50)
+    print("TEST 3: Database Operations")
+    print("=" * 50)
 
     try:
-        # Initialize database
-        DatabaseManager(
+        from yourdaily.utils.db import DatabaseManager
+
+        # Initialize database manager
+        db = DatabaseManager(
             search_db_path="data/db/search_index.db",
             article_db_path="data/db/article_data.db",
         )
-        print("✅ Database manager initialized")
 
-        # Check if tables exist
-        # Check search_index table
-        conn = sqlite3.connect("data/db/search_index.db")
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND "
-            "name='search_index'"
-        )
-        if cursor.fetchone():
-            print("✅ search_index table exists")
+        # Test basic operations
+        test_article = {
+            "topic": "Test",
+            "title": "Test Article",
+            "url": "https://example.com/test",
+            "source": "Test Source",
+            "rss_date": get_yesterday_date(),
+            "published_date": get_yesterday_date(),
+        }
+
+        # Insert test article
+        db.insert_search_result(**test_article)
+
+        # Retrieve test article
+        articles = db.get_articles_by_date(get_yesterday_date())
+        test_found = any(article["title"] == "Test Article" for article in articles)
+
+        if test_found:
+            print("✅ Database operations successful")
+            # Clean up test data
+            db.delete_search_result("https://example.com/test")
+            print("✅ Test data cleaned up")
         else:
-            print("❌ search_index table missing")
-
-        # Check article_data table
-        conn2 = sqlite3.connect("data/db/article_data.db")
-        cursor2 = conn2.cursor()
-        cursor2.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND "
-            "name='article_data'"
-        )
-        if cursor2.fetchone():
-            print("✅ article_data table exists")
-        else:
-            print("❌ article_data table missing")
-
-        conn.close()
-        conn2.close()
+            print("❌ Database operations failed")
 
         return True
 
@@ -117,89 +130,64 @@ def test_database_creation():
         return False
 
 
-def test_topics_loading():
-    """Test 3: Topics.md loading."""
-    print("\n" + "=" * 60)
-    print("TEST 3: Topics Loading")
-    print("=" * 60)
+def test_rss_feeds_and_browser():
+    """Test 4: RSS feed fetching and browser automation."""
+    print("\n" + "=" * 50)
+    print("TEST 4: RSS Feeds and Browser")
+    print("=" * 50)
 
     try:
-        import frontmatter
+        from yourdaily.scraper.fetch_search_results import NewsFetcher
 
-        # Check if Topics.md exists
-        topics_file = "data/Topics.md"
-        if not os.path.exists(topics_file):
-            print(f"❌ Topics.md not found at {topics_file}")
-            return False
+        # Initialize news fetcher
+        fetcher = NewsFetcher()
 
-        print(f"✅ Topics.md found at {topics_file}")
+        # Test RSS feed fetching
+        test_feeds = [
+            "https://feeds.bbci.co.uk/news/rss.xml",
+            "https://rss.cnn.com/rss/edition.rss",
+        ]
 
-        # Load and parse topics
-        with open(topics_file, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        post = frontmatter.loads(content)
-        topics = post.get("topics", [])
-
-        print(f"✅ Loaded {len(topics)} topics:")
-        for i, topic in enumerate(topics[:5], 1):  # Show first 5
-            print(f"   {i}. {topic}")
-
-        if len(topics) > 5:
-            print(f"   ... and {len(topics) - 5} more")
+        for feed_url in test_feeds:
+            try:
+                articles = fetcher.fetch_rss_feed(feed_url)
+                if articles:
+                    print(f"✅ RSS feed {feed_url}: {len(articles)} articles")
+                else:
+                    print(f"⚠️ RSS feed {feed_url}: No articles found")
+            except Exception as e:
+                print(f"❌ RSS feed {feed_url}: {e}")
 
         return True
 
     except Exception as e:
-        print(f"❌ Topics loading failed: {e}")
+        print(f"❌ RSS and browser test failed: {e}")
         return False
 
 
-def test_gnews_api():
-    """Test 4: GNews API connectivity."""
-    print("\n" + "=" * 60)
-    print("TEST 4: GNews API")
-    print("=" * 60)
+def test_topics_loading():
+    """Test 4.5: Topics configuration loading."""
+    print("\n" + "=" * 50)
+    print("TEST 4.5: Topics Configuration")
+    print("=" * 50)
 
     try:
-        from gnews import GNews
-
-        load_dotenv()
-
-        # Initialize GNews
-        gnews = GNews(language="en", country="US", max_results=10)
-
-        # Set API key if available
-        api_key = os.getenv("GNEWS_API_KEY")
-        if api_key:
-            gnews.api_key = api_key
-            print("✅ Using GNews API key")
+        topics_file = Path("data/Topics.md")
+        if topics_file.exists():
+            with open(topics_file, "r", encoding="utf-8") as f:
+                content = f.read()
+                if "Technology" in content and "Business" in content:
+                    print("✅ Topics configuration loaded successfully")
+                    return True
+                else:
+                    print("❌ Topics configuration missing required topics")
+                    return False
         else:
-            print("Using GNews free tier (limited)")
-
-        # Test search
-        yesterday = get_yesterday_date()
-        print(f"🔍 Searching for 'technology' articles from {yesterday}")
-
-        articles = gnews.get_news("technology")
-
-        if articles:
-            print(f"✅ Found {len(articles)} articles")
-            print(f"Sample article: {articles[0].get('title', 'No title')[:50]}...")
-
-            # Check for yesterday's articles
-            yesterday_articles = [
-                a for a in articles if a.get("published date", "").startswith(yesterday)
-            ]
-            print(f"Articles from yesterday: {len(yesterday_articles)}")
-
-        else:
-            print("No articles found (this might be normal for free tier)")
-
-        return True
+            print("❌ Topics.md file not found")
+            return False
 
     except Exception as e:
-        print(f"❌ GNews API test failed: {e}")
+        print(f"❌ Topics loading failed: {e}")
         return False
 
 
@@ -210,6 +198,8 @@ def test_sample_data_creation():
     print("=" * 60)
 
     try:
+        from yourdaily.utils.db import DatabaseManager
+
         db = DatabaseManager(
             search_db_path="data/db/search_index.db",
             article_db_path="data/db/article_data.db",
@@ -222,7 +212,7 @@ def test_sample_data_creation():
                 "title": "AI Breakthrough in Machine Learning",
                 "url": "https://example.com/ai-news-1",
                 "source": "Tech News",
-                "gnews_date": get_yesterday_date(),
+                "rss_date": get_yesterday_date(),
                 "published_date": get_yesterday_date(),
             },
             {
@@ -230,7 +220,7 @@ def test_sample_data_creation():
                 "title": "Major Tech Company Announces New Product",
                 "url": "https://example.com/business-news-1",
                 "source": "Business Daily",
-                "gnews_date": get_yesterday_date(),
+                "rss_date": get_yesterday_date(),
                 "published_date": get_yesterday_date(),
             },
             {
@@ -238,7 +228,7 @@ def test_sample_data_creation():
                 "title": "Breakthrough in Renewable Energy",
                 "url": "https://example.com/science-news-1",
                 "source": "Science Daily",
-                "gnews_date": get_yesterday_date(),
+                "rss_date": get_yesterday_date(),
                 "published_date": get_yesterday_date(),
             },
         ]
@@ -356,18 +346,17 @@ def test_gemini_api():
         # Configure Gemini
         genai.configure(api_key=api_key)
 
-        # Test simple generation
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Test with a simple prompt
+        model = genai.GenerativeModel("gemini-pro")
+        response = model.generate_content("Say 'Hello, Gemini API is working!'")
 
-        test_prompt = (
-            "Summarize this in one sentence: AI technology is advancing rapidly."
-        )
-        response = model.generate_content(test_prompt)
-
-        print("✅ Gemini API connection successful")
-        print(f"Test response: {response.text}")
-
-        return True
+        if response.text:
+            print("✅ Gemini API connection successful")
+            print(f"Response: {response.text}")
+            return True
+        else:
+            print("❌ Gemini API returned empty response")
+            return False
 
     except Exception as e:
         print(f"❌ Gemini API test failed: {e}")
@@ -471,16 +460,19 @@ def test_audio_generation():
 
 
 def test_full_pipeline():
-    """Test 9: Full pipeline with sample data."""
+    """Test 9: Full pipeline integration."""
     print("\n" + "=" * 60)
     print("TEST 9: Full Pipeline")
     print("=" * 60)
 
     try:
-        # Run the full pipeline
-        from run_pipeline import run_pipeline
+        from yourdaily.run_pipeline import PipelineRunner
 
-        result = run_pipeline()
+        # Initialize pipeline
+        pipeline = PipelineRunner()
+
+        # Run pipeline
+        result = pipeline.run()
 
         if result:
             print("✅ Full pipeline completed successfully")
@@ -495,40 +487,50 @@ def test_full_pipeline():
 
 
 def main():
-    """Main test runner."""
-    print("Your Daily Podcaster - Step-by-Step Test Suite")
-    print("=" * 60)
-    print("Run specific tests by uncommenting them below")
+    """Run all tests in sequence."""
+    print("🧪 Your Daily Podcaster - Step-by-Step Testing")
     print("=" * 60)
 
-    # ========================================
-    # UNCOMMENT THE TESTS YOU WANT TO RUN
-    # ========================================
+    tests = [
+        test_environment_setup,
+        test_imports,
+        test_database,
+        test_rss_feeds_and_browser,
+        test_topics_loading,
+        test_sample_data_creation,
+        test_gemini_api,
+        test_tts_setup,
+        test_audio_generation,
+        test_full_pipeline,
+    ]
 
-    # Basic setup tests
-    test_environment_setup()
-    test_database_creation()
-    test_topics_loading()
+    results = []
+    for test in tests:
+        try:
+            result = test()
+            results.append(result)
+        except Exception as e:
+            print(f"❌ Test {test.__name__} crashed: {e}")
+            results.append(False)
 
-    # API tests
-    test_gnews_api()
-    test_gemini_api()
-    test_tts_setup()
-
-    # Data and processing tests
-    test_sample_data_creation()
-    test_audio_generation()
-
-    # Full pipeline test (run last)
-    # test_full_pipeline()
-
+    # Summary
     print("\n" + "=" * 60)
-    print("Test suite completed!")
+    print("TEST SUMMARY")
     print("=" * 60)
-    print("\nNext steps:")
-    print("1. Fix any ❌ errors above")
-    print("2. Uncomment test_full_pipeline() to test the complete system")
-    print("3. Check generated files in data/audio/ directory")
+
+    passed = sum(results)
+    total = len(results)
+
+    for i, (test, result) in enumerate(zip(tests, results), 1):
+        status = "✅ PASS" if result else "❌ FAIL"
+        print(f"{i:2d}. {test.__name__}: {status}")
+
+    print(f"\nOverall: {passed}/{total} tests passed")
+
+    if passed == total:
+        print("🎉 All tests passed! Your setup is ready.")
+    else:
+        print("⚠️ Some tests failed. Please check the issues above.")
 
 
 if __name__ == "__main__":

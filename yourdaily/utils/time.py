@@ -15,8 +15,8 @@ def get_today_date() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
-def format_date_for_gnews(date_str: str) -> str:
-    """Format date for GNews API (YYYY-MM-DD format)."""
+def format_date_for_rss(date_str: str) -> str:
+    """Format date for RSS feeds (YYYY-MM-DD format)."""
     try:
         date_obj = datetime.strptime(date_str, "%Y-%m-%d")
         return date_obj.strftime("%Y-%m-%d")
@@ -32,10 +32,10 @@ def get_date_range(days_back: int = 1) -> tuple[str, str]:
     return (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
 
 
-def parse_gnews_date(date_str: str) -> Optional[str]:
-    """Parse GNews date format and return YYYY-MM-DD."""
+def parse_rss_date(date_str: str) -> Optional[str]:
+    """Parse RSS date format and return YYYY-MM-DD."""
     try:
-        # GNews returns dates in format like "Tue, 22 Jul 2025 19:14:23 GMT"
+        # RSS feeds return dates in RFC 2822 format like "Mon, 28 Jul 2025 09:00:06 GMT"
         try:
             date_obj = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %Z")
             return date_obj.strftime("%Y-%m-%d")

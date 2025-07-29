@@ -36,7 +36,7 @@ except ImportError:
 
 
 class AudioGenerator:
-    def __init__(self):
+    def __init__(self, target_date: Optional[str] = None):
         """Initialize the audio generator."""
         load_dotenv()
 
@@ -48,6 +48,10 @@ class AudioGenerator:
             search_db_path=os.getenv("SEARCH_DB_PATH", "data/db/search_index.db"),
             article_db_path=os.getenv("ARTICLE_DB_PATH", "data/db/article_data.db"),
         )
+
+        # Date filtering - default to yesterday if not specified
+        self.target_date = target_date or get_yesterday_date()
+        self.logger.info(f"Target date for audio generation: {self.target_date}")
 
         # Audio output directories
         self.audio_dir = Path(os.getenv("AUDIO_OUTPUT_DIR", "data/audio"))
@@ -96,8 +100,8 @@ class AudioGenerator:
             self.tts_client = None
 
     def get_articles_for_audio(self) -> List[Dict[str, Any]]:
-        """Get articles that have summaries but no audio."""
-        return self.db.get_articles_for_audio()
+        """Get articles that have summaries but no audio from the target date only."""
+        return self.db.get_articles_for_audio_from_date(self.target_date)
 
     def group_summaries_by_topic(
         self, articles: List[Dict[str, Any]]
@@ -281,7 +285,7 @@ class AudioGenerator:
                 failed_topics += 1
 
         # Generate intro and outro
-        date = get_yesterday_date()
+        date = self.target_date
         intro_text = self.create_intro_text(date)
         outro_text = self.create_outro_text()
 
@@ -321,6 +325,19 @@ class AudioGenerator:
 
 def main():
     """Main entry point."""
+    import argparse
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Generate audio from article summaries"
+    )
+    parser.add_argument(
+        "--date",
+        type=str,
+        help="Target date for processing (YYYY-MM-DD format, defaults to yesterday)",
+    )
+    args = parser.parse_args()
+
     # Setup logging
     setup_logger()
     logger = get_logger("main")
@@ -330,7 +347,7 @@ def main():
     logger.info("=" * 50)
 
     try:
-        generator = AudioGenerator()
+        generator = AudioGenerator(target_date=args.date)
         result = generator.run()
 
         if result["success"]:

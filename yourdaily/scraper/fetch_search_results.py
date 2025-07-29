@@ -2,21 +2,24 @@
 """
 News Search Results Fetcher
 
-Fetches news articles from GNews based on topics defined in Topics.md
+Fetches news articles from Google News RSS feeds based on topics defined in Topics.md
 and stores metadata in search_index.db
 """
 
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib.parse import quote
 
+import feedparser
+import requests
 from dotenv import load_dotenv
-from gnews import GNews
 
 from yourdaily.utils.db import DatabaseManager
 from yourdaily.utils.logger import get_logger, setup_logger
-from yourdaily.utils.time import get_yesterday_date, parse_gnews_date
+from yourdaily.utils.time import get_yesterday_date
 
 
 class NewsFetcher:
@@ -33,23 +36,28 @@ class NewsFetcher:
             article_db_path=os.getenv("ARTICLE_DB_PATH", "data/db/article_data.db"),
         )
 
-        # Initialize GNews client
-        self.gnews = GNews(
-            language="en",
-            country="US",
-            max_results=20,
-            period="7d",
-            start_date=None,
-            end_date=None,
-        )
+        # RSS feed configuration
+        self.base_rss_url = "https://news.google.com/rss/search"
+        self.rss_params = {"hl": "en-US", "gl": "US", "ceid": "US:en"}
 
-        # Set API key if available
-        api_key = os.getenv("GNEWS_API_KEY")
-        if api_key:
-            self.gnews.api_key = api_key
-            self.logger.info("Using GNews API key")
-        else:
-            self.logger.info("No GNews API key found - using free tier")
+        # Request configuration
+        self.session = requests.Session()
+        # Try to use a fake user agent, fall back to a default if unavailable
+        try:
+            from fake_useragent import UserAgent
+
+            ua = UserAgent()
+            user_agent = ua.random
+            self.logger.debug(f"Using fake user agent: {user_agent}")
+        except Exception as e:
+            user_agent = (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            )
+            self.logger.warning(
+                f"Failed to get fake user agent, using default: {user_agent} ({e})"
+            )
+
+        self.session.headers.update({"User-Agent": user_agent})
 
     def load_topics(self) -> List[str]:
         """Load topics from Topics.md file."""
@@ -77,6 +85,8 @@ class NewsFetcher:
                 # Look for topic sections (lines starting with -)
                 if line.startswith("- ") and not line.startswith("---"):
                     topic = line[2:].strip()  # Remove "- " prefix
+                    # Remove quotes if present
+                    topic = topic.strip("\"'")
                     if topic:
                         topics.append(topic)
                         self.logger.debug(f"Found topic: {topic}")
@@ -88,15 +98,39 @@ class NewsFetcher:
             self.logger.error(f"Error loading topics: {e}")
             return []
 
+    def parse_rss_date(self, rss_date: str) -> str:
+        """Parse RSS pubDate to YYYY-MM-DD format."""
+        try:
+            # RSS dates are in RFC 2822 format: "Mon, 28 Jul 2025 09:00:06 GMT"
+            dt = datetime.strptime(rss_date, "%a, %d %b %Y %H:%M:%S %Z")
+            return dt.strftime("%Y-%m-%d")
+        except Exception as e:
+            self.logger.warning(f"Failed to parse RSS date '{rss_date}': {e}")
+            return ""
+
+    def build_rss_url(self, topic: str) -> str:
+        """Build Google News RSS URL for a topic."""
+        encoded_topic = quote(topic)
+        params = "&".join([f"{k}={v}" for k, v in self.rss_params.items()])
+        return f"{self.base_rss_url}?q={encoded_topic}&{params}"
+
     def search_topic(self, topic: str) -> List[Dict[str, Any]]:
-        """Search for articles on a specific topic."""
+        """Search for articles on a specific topic using RSS."""
         try:
             self.logger.info(f"Searching for articles on: {topic}")
 
-            # Search GNews
-            articles = self.gnews.get_news(topic)
+            # Build RSS URL
+            rss_url = self.build_rss_url(topic)
+            self.logger.debug(f"RSS URL: {rss_url}")
 
-            if not articles:
+            # Fetch RSS feed
+            response = self.session.get(rss_url, timeout=30)
+            response.raise_for_status()
+
+            # Parse RSS feed
+            feed = feedparser.parse(response.content)
+
+            if not feed.entries:
                 self.logger.warning(f"No articles found for topic: {topic}")
                 return []
 
@@ -104,18 +138,26 @@ class NewsFetcher:
             yesterday = get_yesterday_date()
             filtered_articles = []
 
-            for article in articles:
+            for entry in feed.entries:
                 # Parse publication date
-                pub_date = parse_gnews_date(article.get("published date", ""))
+                rss_date = getattr(entry, "published", "")
+                pub_date = self.parse_rss_date(rss_date)
 
                 if pub_date == yesterday:
+                    # Extract source from entry
+                    source = ""
+                    if hasattr(entry, "source") and hasattr(entry.source, "href"):
+                        source = getattr(entry.source, "title", entry.source.href)
+                    elif hasattr(entry, "tags") and entry.tags:
+                        source = entry.tags[0].term
+
                     filtered_articles.append(
                         {
                             "topic": topic,
-                            "title": article.get("title", ""),
-                            "url": article.get("url", ""),
-                            "source": article.get("publisher", {}).get("title", ""),
-                            "gnews_date": article.get("published date", ""),
+                            "title": getattr(entry, "title", ""),
+                            "url": getattr(entry, "link", ""),
+                            "source": source,
+                            "rss_date": rss_date,
                             "published_date": pub_date,
                         }
                     )
@@ -139,16 +181,18 @@ class NewsFetcher:
             try:
                 # Check if article already exists
                 if self.db.article_exists(article["url"]):
-                    self.logger.debug(f"Article already exists, skipping: {article['title'][:50]}...")
+                    self.logger.debug(
+                        f"Article already exists, skipping: {article['title'][:50]}..."
+                    )
                     skipped_count += 1
                     continue
 
                 success = self.db.insert_search_result(
                     topic=article["topic"],
                     title=article["title"],
-                    url=article["url"],
+                    rss_url=article["url"],
                     source=article["source"],
-                    gnews_date=article["gnews_date"],
+                    rss_date=article["rss_date"],
                     published_date=article["published_date"],
                 )
 
@@ -163,7 +207,10 @@ class NewsFetcher:
             except Exception as e:
                 self.logger.error(f"Error storing article: {e}")
 
-        self.logger.info(f"Storage complete: {stored_count} new articles stored, {skipped_count} duplicates skipped")
+        self.logger.info(
+            f"Storage complete: {stored_count} new articles stored, "
+            f"{skipped_count} duplicates skipped"
+        )
         return stored_count
 
     def run(self) -> Dict[str, Any]:
@@ -190,8 +237,7 @@ class NewsFetcher:
 
         # Summary
         self.logger.info(
-            f"Search complete: {total_articles} articles found, "
-            f"{total_stored} stored"
+            f"Search complete: {total_articles} articles found, {total_stored} stored"
         )
 
         return {
@@ -209,7 +255,7 @@ def main():
     logger = get_logger("main")
 
     logger.info("=" * 50)
-    logger.info("Starting News Search Results Fetcher")
+    logger.info("Starting News RSS Fetcher")
     logger.info("=" * 50)
 
     try:

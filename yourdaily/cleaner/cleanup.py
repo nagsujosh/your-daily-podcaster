@@ -2,7 +2,8 @@
 """
 Cleanup Utility
 
-Removes temporary audio files and cleans article data while preserving metadata
+Removes temporary audio files and cleans article data while preserving metadata.
+Now supports date-based cleanup and yesterday-only processing.
 """
 
 import os
@@ -15,6 +16,7 @@ from dotenv import load_dotenv
 
 from yourdaily.utils.db import DatabaseManager
 from yourdaily.utils.logger import get_logger, setup_logger
+from yourdaily.utils.time import get_yesterday_date
 
 
 class CleanupUtility:
@@ -40,7 +42,9 @@ class CleanupUtility:
 
         # Cleanup settings
         self.keep_final_audio_days = 7  # Keep final podcasts for 7 days
-        self.cleanup_old_data_days = 7  # Clean article data older than 7 days
+        self.cleanup_old_data_days = (
+            3  # Clean article data older than 3 days (reduced from 7)
+        )
 
     def cleanup_temp_audio_files(self) -> int:
         """Remove temporary audio files."""
@@ -185,6 +189,66 @@ class CleanupUtility:
             self.logger.error(f"Error cleaning old logs: {e}")
             return 0
 
+    def cleanup_data_from_date(self, target_date: str) -> Dict[str, int]:
+        """Clean all data from a specific date from both databases."""
+        try:
+            self.logger.info(f"Cleaning all data from {target_date}")
+            result = self.db.cleanup_data_from_date(target_date)
+
+            if result["search_deleted"] > 0 or result["article_deleted"] > 0:
+                self.logger.info(
+                    f"Cleaned {result['search_deleted']} search records and "
+                    f"{result['article_deleted']} article records from {target_date}"
+                )
+            else:
+                self.logger.info(f"No data found to clean from {target_date}")
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error cleaning data from date {target_date}: {e}")
+            return {"search_deleted": 0, "article_deleted": 0}
+
+    def cleanup_old_data_by_days(self, days: int) -> Dict[str, int]:
+        """Clean data older than specified days from both databases."""
+        try:
+            self.logger.info(f"Cleaning data older than {days} days")
+            result = self.db.cleanup_data_older_than_days(days)
+
+            if result["search_deleted"] > 0 or result["article_deleted"] > 0:
+                self.logger.info(
+                    f"Cleaned {result['search_deleted']} search records and "
+                    f"{result['article_deleted']} article records older than "
+                    f"{days} days"
+                )
+            else:
+                self.logger.info(f"No data found to clean older than {days} days")
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error cleaning old data: {e}")
+            return {"search_deleted": 0, "article_deleted": 0}
+
+    def get_data_stats_for_date(self, target_date: str) -> Dict[str, int]:
+        """Get statistics about data for a specific date."""
+        try:
+            stats = self.db.get_data_stats_by_date(target_date)
+            self.logger.info(f"Data stats for {target_date}: {stats}")
+            return stats
+        except Exception as e:
+            self.logger.error(f"Error getting stats for date {target_date}: {e}")
+            return {}
+
+    def cleanup_yesterday_data(self) -> Dict[str, int]:
+        """Clean all data from yesterday (useful for fresh start)."""
+        yesterday = get_yesterday_date()
+        return self.cleanup_data_from_date(yesterday)
+
+    def cleanup_old_data_automatic(self) -> Dict[str, int]:
+        """Automatically clean data older than the configured threshold."""
+        return self.cleanup_old_data_by_days(self.cleanup_old_data_days)
+
     def get_disk_usage_info(self) -> Dict[str, Any]:
         """Get information about disk usage."""
         try:
@@ -245,6 +309,7 @@ class CleanupUtility:
             "old_metadata_files_removed": self.cleanup_old_metadata_files(),
             "old_logs_removed": self.cleanup_old_logs(),
             "database_cleaned": self.cleanup_database_content(),
+            "old_data_cleaned": self.cleanup_old_data_automatic(),
         }
 
         # Get final disk usage

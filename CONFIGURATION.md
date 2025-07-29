@@ -81,10 +81,8 @@ make precommit
 4. Create a service account and download JSON credentials
 5. Add to `.env`: `GCLOUD_TTS_CREDS=path/to/credentials.json`
 
-### GNews API (Optional)
-1. Go to [GNews](https://gnews.io/)
-2. Sign up for a free API key
-3. Add to `.env`: `GNEWS_API_KEY=your_key_here`
+### News Source Configuration
+The application now uses Google News RSS feeds directly, eliminating the need for external API keys. Articles are fetched using browser automation for reliable access.
 
 ## Environment Variables
 
@@ -174,7 +172,7 @@ Add these secrets to your GitHub repository:
 
 1. **GEMINI_KEY**: Your Google Gemini API key
 2. **GCLOUD_TTS_CREDS**: Your Google Cloud service account JSON (as a string)
-3. **GNEWS_API_KEY**: Your GNews API key (optional)
+
 
 ### Workflow Configuration
 The workflow runs daily at 8:00 AM UTC. To change the schedule, edit `.github/workflows/daily_run.yml`:
@@ -275,7 +273,7 @@ pytest test/test_basic.py
 ### API Costs
 - **Gemini API**: ~$0.0015 per 1K characters
 - **Google Cloud TTS**: ~$4.00 per 1M characters
-- **GNews**: Free tier available
+- **Google News RSS**: Free, no API key required
 
 ### Custom Cleanup Rules
 Edit `cleaner/cleanup.py` to customize cleanup behavior:

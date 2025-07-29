@@ -19,7 +19,7 @@ from yourdaily.utils.time import get_yesterday_date
 
 
 class ArticleSummarizer:
-    def __init__(self):
+    def __init__(self, target_date: Optional[str] = None):
         """Initialize the article summarizer."""
         load_dotenv()
 
@@ -31,6 +31,10 @@ class ArticleSummarizer:
             search_db_path=os.getenv("SEARCH_DB_PATH", "data/db/search_index.db"),
             article_db_path=os.getenv("ARTICLE_DB_PATH", "data/db/article_data.db"),
         )
+
+        # Date filtering - default to yesterday if not specified
+        self.target_date = target_date or get_yesterday_date()
+        self.logger.info(f"Target date for summarization: {self.target_date}")
 
         # Gemini API configuration
         self.gemini_api_key = os.getenv("GEMINI_KEY")
@@ -46,8 +50,8 @@ class ArticleSummarizer:
         self.request_delay = 1  # seconds between requests
 
     def get_articles_for_summarization(self) -> List[Dict[str, Any]]:
-        """Get articles that have clean text but no summary."""
-        return self.db.get_articles_for_summarization()
+        """Get articles that have clean text but no summary from the target date only."""
+        return self.db.get_articles_for_summarization_from_date(self.target_date)
 
     def group_articles_by_topic(
         self, articles: List[Dict[str, Any]]
@@ -97,8 +101,8 @@ class ArticleSummarizer:
             f"- Key facts and figures\n"
             f"- Major events or announcements\n"
             f"- Impact and implications\n\n"
-            f"Keep each bullet point concise but informative. Avoid generic statements "
-            f"and focus on concrete details from the articles."
+            f"Keep each bullet point concise but informative. Avoid generic "
+            f"statements and focus on concrete details from the articles."
         )
 
         return prompt
@@ -154,7 +158,7 @@ class ArticleSummarizer:
             self.logger.info(f"Summarizing {len(articles)} articles for topic: {topic}")
 
             # Get date for the prompt
-            date = get_yesterday_date()
+            date = self.target_date
 
             # Create prompt
             prompt = self.create_summary_prompt(topic, articles, date)
@@ -275,6 +279,17 @@ class ArticleSummarizer:
 
 def main():
     """Main entry point."""
+    import argparse
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Summarize articles using Gemini API")
+    parser.add_argument(
+        "--date",
+        type=str,
+        help="Target date for processing (YYYY-MM-DD format, defaults to yesterday)",
+    )
+    args = parser.parse_args()
+
     # Setup logging
     setup_logger()
     logger = get_logger("main")
@@ -284,7 +299,7 @@ def main():
     logger.info("=" * 50)
 
     try:
-        summarizer = ArticleSummarizer()
+        summarizer = ArticleSummarizer(target_date=args.date)
         result = summarizer.run()
 
         if result["success"]:
