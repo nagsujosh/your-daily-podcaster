@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0">
+  <channel>
+    <title>Your Daily News Digest</title>
+    <link>https://nagsujosh.github.io/your-daily-podcaster/podcast.xml</link>
+    <description>AI-powered daily news summaries delivered as audio</description>
+    <atom:link href="https://nagsujosh.github.io/your-daily-podcaster/podcast.xml" rel="self"/>
+    <docs>http://www.rssboard.org/rss-specification</docs>
+    <generator>python-feedgen</generator>
+    <image>
+      <url>https://nagsujosh.github.io/your-daily-podcaster/logo.png</url>
+      <title>Your Daily News Digest</title>
+      <link>https://nagsujosh.github.io/your-daily-podcaster/podcast.xml</link>
+    </image>
+    <language>en-US</language>
+    <lastBuildDate>Tue, 29 Jul 2025 20:06:10 +0000</lastBuildDate>
+    <itunes:author>Your Daily Podcaster</itunes:author>
+    <itunes:category text="News"/>
+    <itunes:explicit>no</itunes:explicit>
+    <itunes:summary>AI-powered daily news summaries delivered as audio</itunes:summary>
+    <item>
+      <title>Daily News Digest - 2025-07-28</title>
+      <description>Your daily news digest for 2025-07-28</description>
+      <guid isPermaLink="false">https://nagsujosh.github.io/your-daily-podcaster/daily_digest_2025_07_28.mp3</guid>
+      <enclosure url="https://nagsujosh.github.io/your-daily-podcaster/daily_digest_2025_07_28.mp3" length="991437" type="audio/mpeg"/>
+      <pubDate>Mon, 28 Jul 2025 00:00:00 +0000</pubDate>
+      <itunes:duration>04:07</itunes:duration>
+      <itunes:summary>Your daily news digest for 2025-07-28</itunes:summary>
+    </item>
+  </channel>
+</rss>
