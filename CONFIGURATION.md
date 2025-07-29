@@ -97,6 +97,7 @@ LOG_LEVEL=INFO
 LOG_FILE=logs/podcaster.log
 PODCAST_FEED_URL=https://yourdomain.com/podcast.xml
 AUDIO_BASE_URL=https://yourdomain.com/audio/
+PODCAST_OWNER_EMAIL=your-email@example.com
 ```
 
 ## Code Quality Tools
@@ -218,9 +219,12 @@ The system generates an RSS feed at `data/audio/podcast.xml`. To make it publicl
 3. **CDN**: Upload files to a CDN and update the URLs
 
 ### Spotify Submission
-1. Generate the RSS feed
-2. Submit the RSS feed URL to Spotify for Podcasters
-3. Wait for approval (usually 24-48 hours)
+1. **Configure owner email**: Set `PODCAST_OWNER_EMAIL` in your `.env` file (required by Spotify)
+2. Generate the RSS feed with the updated configuration
+3. Submit the RSS feed URL to Spotify for Podcasters
+4. Wait for approval (usually 24-48 hours)
+
+**Note**: Spotify requires an email address in the RSS feed's `itunes:owner` element. Make sure to set the `PODCAST_OWNER_EMAIL` environment variable before generating your RSS feed.
 
 ## Development Workflow
 

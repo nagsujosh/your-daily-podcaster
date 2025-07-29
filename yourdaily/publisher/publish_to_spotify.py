@@ -56,6 +56,7 @@ class PodcastPublisher:
         self.podcast_title = "Your Daily News Digest"
         self.podcast_description = "AI-powered daily news summaries delivered as audio"
         self.podcast_author = "Your Daily Podcaster"
+        self.podcast_email = os.getenv("PODCAST_OWNER_EMAIL", "")
         self.podcast_language = "en-US"
         self.podcast_category = "News"
 
@@ -171,6 +172,12 @@ class PodcastPublisher:
             fg.podcast.itunes_author(self.podcast_author)
             fg.podcast.itunes_summary(self.podcast_description)
             fg.podcast.itunes_explicit("no")
+            
+            # Set owner information (required by Spotify)
+            if self.podcast_email:
+                fg.podcast.itunes_owner(self.podcast_author, self.podcast_email)
+            else:
+                self.logger.warning("No email configured for podcast owner - this may prevent Spotify submission")
 
             # Create episode entry
             date = get_yesterday_date()
