@@ -69,6 +69,8 @@ jobs:
         echo "TEMP_AUDIO_DIR=\"${{ env.TEMP_AUDIO_DIR }}\"" >> .env
         echo "LOG_LEVEL=\"INFO\"" >> .env
         echo "LOG_FILE=\"logs/podcaster.log\"" >> .env
+        echo "PODCAST_FEED_URL=\"https://nagsujosh.github.io/your-daily-podcaster/podcast.xml\"" >> .env
+        echo "AUDIO_BASE_URL=\"https://nagsujosh.github.io/your-daily-podcaster/\"" >> .env
 
     - name: Setup Google Cloud credentials
       run: |
