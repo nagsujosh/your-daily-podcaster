@@ -53,19 +53,19 @@ jobs:
 
     - name: Setup environment variables
       run: |
-        echo "GEMINI_KEY=${{ secrets.GEMINI_KEY }}" >> .env
-        echo "GCLOUD_TTS_CREDS=${{ secrets.GCLOUD_TTS_CREDS }}" >> .env
-        echo "SEARCH_DB_PATH=${{ env.SEARCH_DB_PATH }}" >> .env
-        echo "ARTICLE_DB_PATH=${{ env.ARTICLE_DB_PATH }}" >> .env
-        echo "AUDIO_OUTPUT_DIR=${{ env.AUDIO_OUTPUT_DIR }}" >> .env
-        echo "TEMP_AUDIO_DIR=${{ env.TEMP_AUDIO_DIR }}" >> .env
-        echo "LOG_LEVEL=INFO" >> .env
-        echo "LOG_FILE=logs/podcaster.log" >> .env
+        echo "GEMINI_KEY=\"${{ secrets.GEMINI_KEY }}\"" >> .env
+        echo "GCLOUD_TTS_CREDS=\"${{ secrets.GCLOUD_TTS_CREDS }}\"" >> .env
+        echo "SEARCH_DB_PATH=\"${{ env.SEARCH_DB_PATH }}\"" >> .env
+        echo "ARTICLE_DB_PATH=\"${{ env.ARTICLE_DB_PATH }}\"" >> .env
+        echo "AUDIO_OUTPUT_DIR=\"${{ env.AUDIO_OUTPUT_DIR }}\"" >> .env
+        echo "TEMP_AUDIO_DIR=\"${{ env.TEMP_AUDIO_DIR }}\"" >> .env
+        echo "LOG_LEVEL=\"INFO\"" >> .env
+        echo "LOG_FILE=\"logs/podcaster.log\"" >> .env
 
     - name: Setup Google Cloud credentials
       run: |
         echo '${{ secrets.GCLOUD_TTS_CREDS }}' > gcloud_creds.json
-        echo "GCLOUD_TTS_CREDS=gcloud_creds.json" >> .env
+        echo "GCLOUD_TTS_CREDS=\"gcloud_creds.json\"" >> .env
 
     - name: Run complete pipeline
       run: |
