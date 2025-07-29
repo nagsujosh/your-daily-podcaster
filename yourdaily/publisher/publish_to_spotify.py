@@ -8,7 +8,7 @@ Generates RSS feeds and publishes podcasts to various platforms
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -170,7 +170,7 @@ class PodcastPublisher:
             fg.podcast.itunes_category(self.podcast_category)
             fg.podcast.itunes_author(self.podcast_author)
             fg.podcast.itunes_summary(self.podcast_description)
-            fg.podcast.itunes_explicit("false")
+            fg.podcast.itunes_explicit("no")
 
             # Create episode entry
             date = get_yesterday_date()
@@ -187,7 +187,7 @@ class PodcastPublisher:
             fe = fg.add_entry()
             fe.title(episode_title)
             fe.description(f"Your daily news digest for {date}")
-            fe.published(datetime.strptime(date, "%Y-%m-%d"))
+            fe.published(datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc))
             fe.id(episode_url)
 
             # Add audio enclosure
