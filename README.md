@@ -40,7 +40,7 @@ The system is designed to process **only yesterday's articles** to ensure fresh,
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/nagsujosh/your-daily-podcaster
 cd yourDailyPodcaster
 
 # Create virtual environment
