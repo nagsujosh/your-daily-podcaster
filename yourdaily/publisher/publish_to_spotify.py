@@ -10,10 +10,11 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from dotenv import load_dotenv
 
+from yourdaily.cleaner.cleanup import CleanupUtility
 from yourdaily.utils.db import DatabaseManager
 from yourdaily.utils.logger import get_logger, setup_logger
 from yourdaily.utils.time import (
@@ -47,8 +48,9 @@ class PodcastPublisher:
             article_db_path=article_path,
         )
 
-        # Audio directory
+        # Audio directories
         self.audio_dir = Path(os.getenv("AUDIO_OUTPUT_DIR", "data/audio"))
+        self.temp_dir = Path(os.getenv("TEMP_AUDIO_DIR", "data/audio/temp"))
 
         # Podcast configuration
         self.podcast_title = "Your Daily News Digest"
@@ -66,13 +68,25 @@ class PodcastPublisher:
         )
 
     def find_latest_audio_file(self) -> Optional[str]:
-        """Find the most recent audio file."""
+        """Find the most recent audio file, checking temp directory first."""
         try:
+            # First check temp directory
+            if self.temp_dir.exists():
+                temp_files = list(self.temp_dir.glob("daily_digest_*.mp3"))
+                if temp_files:
+                    # Sort by modification time (newest first)
+                    latest_file = max(temp_files, key=lambda f: f.stat().st_mtime)
+                    self.logger.info(
+                        f"Found latest audio file in temp: {latest_file.name}"
+                    )
+                    return str(latest_file)
+
+            # Fall back to main audio directory
             if not self.audio_dir.exists():
                 self.logger.warning(f"Audio directory does not exist: {self.audio_dir}")
                 return None
 
-            # Look for daily digest files
+            # Look for daily digest files in main directory
             audio_files = list(self.audio_dir.glob("daily_digest_*.mp3"))
 
             if not audio_files:
@@ -287,6 +301,40 @@ Add this URL to your podcast app: `{self.feed_url}`
             self.logger.error(f"Error creating metadata file: {e}")
             return None
 
+    def cleanup_temp_files_after_publish(self, audio_path: str) -> Tuple[str, bool]:
+        """Clean up temporary audio files after successful publishing."""
+        try:
+            final_audio_path = audio_path
+
+            # Move the final audio file from temp to permanent location if it's in temp
+            if str(self.temp_dir) in audio_path:
+                # Move to permanent location
+                permanent_path = self.audio_dir / Path(audio_path).name
+                self.audio_dir.mkdir(parents=True, exist_ok=True)
+
+                # Copy the file to permanent location
+                import shutil
+
+                shutil.copy2(audio_path, permanent_path)
+                self.logger.info(
+                    f"Moved audio file to permanent location: {permanent_path}"
+                )
+
+                final_audio_path = str(permanent_path)
+
+            # Clean up all temp files
+            cleanup = CleanupUtility()
+            removed_count = cleanup.cleanup_temp_audio_files()
+
+            self.logger.info(
+                f"Cleaned up {removed_count} temporary audio files after publishing"
+            )
+            return final_audio_path, True
+
+        except Exception as e:
+            self.logger.error(f"Error cleaning up temp files: {e}")
+            return audio_path, False
+
     def run(self) -> Dict[str, Any]:
         """Run the complete publishing process."""
         self.logger.info("Starting podcast publishing process")
@@ -309,15 +357,21 @@ Add this URL to your podcast app: `{self.feed_url}`
         # Create GitHub release data
         release_data = self.create_github_release_data(audio_path)
 
+        # Clean up temporary files after successful publishing
+        final_audio_path, cleanup_success = self.cleanup_temp_files_after_publish(
+            audio_path
+        )
+
         # Summary
         self.logger.info("Publishing complete")
 
         return {
             "success": True,
-            "audio_file": audio_path,
+            "audio_file": final_audio_path,
             "rss_feed": rss_path,
             "metadata_file": metadata_path,
             "github_release_data": release_data,
+            "cleanup_performed": cleanup_success,
         }
 
 

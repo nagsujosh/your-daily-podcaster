@@ -43,7 +43,7 @@ class ArticleSummarizer:
 
         self.gemini_url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-pro:generateContent"
+            "gemini-2.0-flash:generateContent"
         )
 
         # Rate limiting
@@ -72,37 +72,67 @@ class ArticleSummarizer:
     ) -> str:
         """Create a prompt for summarizing articles on a specific topic."""
 
-        # Combine all article content
+        # Combine all article content with source tracking
         combined_content = ""
+        source_count = {}
+
         for i, article in enumerate(articles, 1):
             title = article.get("title", "Unknown Title")
             source = article.get("source", "Unknown Source")
             content = article.get("clean_text", "")
+
+            # Track source frequency for deduplication insights
+            source_count[source] = source_count.get(source, 0) + 1
 
             combined_content += f"\n\n--- Article {i} ---\n"
             combined_content += f"Title: {title}\n"
             combined_content += f"Source: {source}\n"
             combined_content += f"Content: {content}\n"
 
+        # Create source summary for the prompt
+        sources_summary = ", ".join(
+            [
+                f"{source} ({count} article{'s' if count > 1 else ''})"
+                for source, count in source_count.items()
+            ]
+        )
+
         prompt = (
-            f"You are a professional news summarizer. Please analyze the following "
-            f"articles about '{topic}' from {date} and create a concise summary.\n\n"
-            f"{combined_content}\n\n"
-            f"Please provide a summary with the following format:\n\n"
-            f"**{topic} Summary for {date}**\n\n"
-            f"• [Key point 1 with specific facts, locations, events, and people]\n"
-            f"• [Key point 2 with specific facts, locations, events, and people]\n"
-            f"• [Key point 3 with specific facts, locations, events, and people]\n"
-            f"• [Key point 4 with specific facts, locations, events, and people]\n"
-            f"• [Key point 5 with specific facts, locations, events, and people]\n\n"
-            f"Focus on:\n"
-            f"- The most important developments and news\n"
-            f"- Specific names, locations, and dates mentioned\n"
-            f"- Key facts and figures\n"
-            f"- Major events or announcements\n"
-            f"- Impact and implications\n\n"
-            f"Keep each bullet point concise but informative. Avoid generic "
-            f"statements and focus on concrete details from the articles."
+            f"You are a professional broadcast news reporter creating a comprehensive "
+            f"news segment for '{topic}' on {date}. You have {len(articles)} articles "
+            f"from the following sources: {sources_summary}.\n\n"
+            f"ARTICLES TO ANALYZE:\n{combined_content}\n\n"
+            f"INSTRUCTIONS:\n"
+            f"Create a professional news report following broadcast journalism standards:\n\n"
+            f"**{topic.upper()} REPORT - {date}**\n\n"
+            f"📺 LEAD STORY:\n"
+            f"• Start with the most significant breaking news or development\n"
+            f"• Include WHO, WHAT, WHEN, WHERE, WHY in the opening\n\n"
+            f"📊 KEY DEVELOPMENTS:\n"
+            f"• [Development 1 with specific facts, figures, and verified information]\n"
+            f"• [Development 2 with quotes from officials, experts, or witnesses]\n"
+            f"• [Development 3 with market data, statistics, or measurable impacts]\n"
+            f"• [Development 4 with geographic specifics and affected populations]\n\n"
+            f"🎯 IMPACT ANALYSIS:\n"
+            f"• Economic implications and market effects\n"
+            f"• Social and political consequences\n"
+            f"• Future outlook and expert predictions\n\n"
+            f"📍 REGIONAL FOCUS:\n"
+            f"• Highlight location-specific impacts and developments\n"
+            f"• Include relevant demographic or geographic context\n\n"
+            f"CRITICAL REQUIREMENTS:\n"
+            f"1. DEDUPLICATION: If multiple sources report the same story, synthesize into ONE coherent narrative citing 'multiple sources confirm' or 'according to several reports'\n"
+            f"2. SOURCE ATTRIBUTION: Use phrases like 'according to [Source Name]', 'reports indicate', '[Source] confirms'\n"
+            f"3. VERIFICATION LANGUAGE: Use 'confirmed', 'reported', 'alleged', 'unverified' appropriately\n"
+            f"4. NUMBERS & DATES: Include specific figures, percentages, dates, and timeframes\n"
+            f"5. QUOTES: Incorporate direct quotes when available\n"
+            f"6. CONTEXT: Provide background information for complex stories\n"
+            f"7. BROADCAST STYLE: Write as if reading aloud for radio/podcast audience\n\n"
+            f"TONE: Professional, authoritative, balanced, and engaging for audio consumption.\n"
+            f"LENGTH: Aim for 90-120 seconds of spoken content (approximately 225-300 words).\n\n"
+            f"Format as a continuous narrative suitable for text-to-speech conversion, "
+            f"avoiding bullet points in the final output. Use natural speech patterns and "
+            f"clear transitions between topics."
         )
 
         return prompt
@@ -115,6 +145,7 @@ class ArticleSummarizer:
 
             headers = {
                 "Content-Type": "application/json",
+                "X-goog-api-key": self.gemini_api_key,
                 "User-Agent": get_random_user_agent(),
             }
 
@@ -128,10 +159,10 @@ class ArticleSummarizer:
                 },
             }
 
-            url = f"{self.gemini_url}?key={self.gemini_api_key}"
-
             self.logger.debug("Calling Gemini API...")
-            response = requests.post(url, headers=headers, json=data, timeout=60)
+            response = requests.post(
+                self.gemini_url, headers=headers, json=data, timeout=60
+            )
             response.raise_for_status()
 
             result = response.json()
@@ -161,6 +192,17 @@ class ArticleSummarizer:
         try:
             self.logger.info(f"Summarizing {len(articles)} articles for topic: {topic}")
 
+            # Log source breakdown for this topic
+            source_breakdown = {}
+            for article in articles:
+                source = article.get("source", "Unknown Source")
+                source_breakdown[source] = source_breakdown.get(source, 0) + 1
+
+            sources_info = ", ".join(
+                [f"{source}: {count}" for source, count in source_breakdown.items()]
+            )
+            self.logger.info(f"Sources for {topic}: {sources_info}")
+
             # Get date for the prompt
             date = self.target_date
 
@@ -172,6 +214,9 @@ class ArticleSummarizer:
 
             if summary:
                 self.logger.info(f"Successfully generated summary for topic: {topic}")
+                # Log summary length for quality control
+                word_count = len(summary.split())
+                self.logger.debug(f"Summary word count for {topic}: {word_count} words")
                 return summary
             else:
                 self.logger.error(f"Failed to generate summary for topic: {topic}")
@@ -187,14 +232,34 @@ class ArticleSummarizer:
 
         for topic, summary in topic_summaries.items():
             try:
-                # Get all articles for this topic that need summaries
-                articles = self.db.get_articles_for_summarization()
+                # Get all articles for this topic that need summaries from target date
+                articles = self.db.get_articles_for_summarization_from_date(
+                    self.target_date
+                )
                 topic_articles = [a for a in articles if a.get("topic") == topic]
+
+                if not topic_articles:
+                    self.logger.warning(
+                        f"No articles found for topic '{topic}' on {self.target_date}"
+                    )
+                    continue
+
+                self.logger.info(
+                    f"Storing summary for {len(topic_articles)} articles in topic: {topic}"
+                )
 
                 # Store summary for each article in this topic
                 for article in topic_articles:
+                    real_url = article.get("real_url")
+                    if not real_url:
+                        self.logger.warning(
+                            f"No real_url found for article: {article.get('title', 'Unknown')}"
+                        )
+                        continue
+
                     success = self.db.insert_article_data(
-                        url=article["url"],
+                        rss_url=article.get("rss_url"),
+                        real_url=real_url,
                         clean_text=article.get("clean_text"),
                         summarized_text=summary,
                     )
@@ -208,12 +273,15 @@ class ArticleSummarizer:
                     else:
                         self.logger.warning(
                             f"Failed to store summary for article: "
-                            f"{article.get('url', 'Unknown URL')}"
+                            f"{article.get('real_url', 'Unknown URL')}"
                         )
 
             except Exception as e:
                 self.logger.error(f"Error storing summaries for topic '{topic}': {e}")
 
+        self.logger.info(
+            f"Summary storage complete: {stored_count} total summaries stored"
+        )
         return stored_count
 
     def run(self) -> Dict[str, Any]:
@@ -228,7 +296,10 @@ class ArticleSummarizer:
             return {
                 "success": True,
                 "topics_processed": 0,
+                "topics_successful": 0,
+                "topics_failed": 0,
                 "summaries_generated": 0,
+                "summaries_stored": 0,
             }
 
         self.logger.info(f"Found {len(articles)} articles to summarize")

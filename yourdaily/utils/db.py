@@ -529,12 +529,16 @@ class DatabaseManager:
                 # First get the URLs to delete
                 cursor = conn.execute(
                     """
-                    SELECT ad.rss_url, ad.real_url
-                    FROM article_data ad
-                    LEFT JOIN search_db.search_index si ON (
-                        ad.rss_url = si.rss_url OR ad.real_url = si.real_url
+                    SELECT rss_url, real_url FROM article_data
+                    WHERE id IN (
+                        SELECT ad.id FROM article_data ad
+                        LEFT JOIN (
+                            SELECT rss_url, real_url, published_date
+                            FROM search_index
+                            WHERE published_date >= ?
+                        ) si ON (ad.rss_url = si.rss_url OR ad.real_url = si.real_url)
+                        WHERE si.published_date IS NULL
                     )
-                    WHERE si.published_date < ? OR si.published_date IS NULL
                     """,
                     (cutoff_date,),
                 )
@@ -707,4 +711,58 @@ class DatabaseManager:
 
         except Exception as e:
             logger.error(f"Error getting stats for date {target_date}: {e}")
+            return {}
+
+    def get_source_statistics(self, target_date: str) -> Dict[str, int]:
+        """Get statistics on article count by source for a given date."""
+        try:
+            with sqlite3.connect(self.search_db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    """
+                    SELECT source, COUNT(*) as article_count
+                    FROM search_index
+                    WHERE DATE(published_date) = ?
+                    GROUP BY source
+                    ORDER BY article_count DESC
+                """,
+                    (target_date,),
+                )
+                result = {
+                    row["source"]: row["article_count"] for row in cursor.fetchall()
+                }
+                return result
+        except Exception as e:
+            logger.error(f"Error getting source statistics: {e}")
+            return {}
+
+    def get_topic_source_breakdown(self, target_date: str) -> Dict[str, Dict[str, int]]:
+        """Get breakdown of sources by topic for a given date."""
+        try:
+            with sqlite3.connect(self.search_db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    """
+                    SELECT topic, source, COUNT(*) as article_count
+                    FROM search_index
+                    WHERE DATE(published_date) = ?
+                    GROUP BY topic, source
+                    ORDER BY topic, article_count DESC
+                """,
+                    (target_date,),
+                )
+
+                result = {}
+                for row in cursor.fetchall():
+                    topic = row["topic"]
+                    source = row["source"]
+                    count = row["article_count"]
+
+                    if topic not in result:
+                        result[topic] = {}
+                    result[topic][source] = count
+
+                return result
+        except Exception as e:
+            logger.error(f"Error getting topic source breakdown: {e}")
             return {}

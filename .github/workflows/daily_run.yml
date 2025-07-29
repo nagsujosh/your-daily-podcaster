@@ -2,8 +2,8 @@ name: Daily Podcast Generation
 
 on:
   schedule:
-    # Run daily at 8:00 AM UTC
-    - cron: '0 8 * * *'
+    # Run daily at 1:00 PM UTC
+    - cron: '0 1 * * *'
   workflow_dispatch:
 
 env:
@@ -113,12 +113,14 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload to GitHub Pages (if configured)
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
       if: success()
-      run: |
-        # This step would upload the RSS feed and audio files to GitHub Pages
-        # for public access. You would need to configure GitHub Pages in your repo.
-        echo "GitHub Pages upload would happen here if configured"
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./data/audio
+        publish_branch: gh-pages
+        destination_dir: .
 
     - name: Notify on success
       if: success()
@@ -139,3 +141,11 @@ jobs:
         name: failure-logs-${{ github.run_number }}
         path: logs/
         retention-days: 30
+
+    - name: Clean up temp files
+      run: |
+        rm -rf data/audio/temp/*
+
+    - name: Clean up old files
+      run: |
+        find data/audio -type f -mtime +7 -delete

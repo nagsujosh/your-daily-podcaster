@@ -120,17 +120,40 @@ class AudioGenerator:
 
     def create_intro_text(self, date: str) -> str:
         """Create introduction text for the podcast."""
-        return (
-            f"Here is your news digest for {date}. "
-            f"Today's top stories cover the following topics."
+        from datetime import datetime
+
+        # Format date for natural speech
+        try:
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            formatted_date = date_obj.strftime("%B %d, %Y")
+            day_name = date_obj.strftime("%A")
+        except ValueError:
+            formatted_date = date
+            day_name = ""
+
+        intro = (
+            f"Good morning, and welcome to your Daily News Digest for "
+            f"{day_name}, {formatted_date}. "
+            f"I'm your AI news anchor bringing you the most important stories "
+            f"and developments from around the world. "
+            f"Let's begin with today's top headlines."
         )
+        return intro
 
     def create_outro_text(self) -> str:
         """Create outro text for the podcast."""
-        return (
-            "Thank you for listening to your daily news digest. "
-            "Stay informed and have a great day."
+        outro = (
+            "That concludes your Daily News Digest. "
+            "We've covered the most significant developments across all major topics. "
+            "Stay informed, stay engaged, and we'll see you tomorrow for another "
+            "comprehensive update on the stories that matter most. "
+            "This has been your AI news team. Have a great day."
         )
+        return outro
+
+    def create_topic_transition_text(self, topic: str) -> str:
+        """Create transition text between topics."""
+        return f"Now turning to {topic}."
 
     def text_to_speech(self, text: str, filename: str) -> Optional[str]:
         """Convert text to speech using Google Cloud TTS."""
@@ -202,6 +225,38 @@ class AudioGenerator:
             self.logger.error(f"Error merging audio files: {e}")
             return None
 
+    def merge_audio_files_to_temp(
+        self, audio_files: List[str], output_filename: str
+    ) -> Optional[str]:
+        """Merge multiple audio files into one and store in temp directory."""
+        if not AUDIO_AVAILABLE:
+            self.logger.error("Audio processing not available (pydub)")
+            return None
+
+        try:
+            # Load and combine audio files
+            combined = AudioSegment.empty()
+
+            for audio_file in audio_files:
+                if os.path.exists(audio_file):
+                    audio = AudioSegment.from_mp3(audio_file)
+                    combined += audio
+
+                    # Add a short pause between segments
+                    pause = AudioSegment.silent(duration=500)  # 0.5 seconds
+                    combined += pause
+
+            # Export the combined audio to temp directory
+            output_path = self.temp_dir / output_filename
+            combined.export(str(output_path), format="mp3")
+
+            self.logger.info(f"Created final audio in temp: {output_filename}")
+            return str(output_path)
+
+        except Exception as e:
+            self.logger.error(f"Error merging audio files: {e}")
+            return None
+
     def generate_topic_audio(self, topic: str, summary: str) -> Optional[str]:
         """Generate audio for a specific topic summary."""
         try:
@@ -212,17 +267,44 @@ class AudioGenerator:
             safe_topic = safe_topic.replace(" ", "_")
             filename = f"{safe_topic}_summary.mp3"
 
+            # Log summary details for tracking
+            word_count = len(summary.split())
+            self.logger.info(f"Generating audio for {topic}: {word_count} words")
+
             # Generate audio
             audio_path = self.text_to_speech(summary, filename)
 
             if audio_path:
                 # Update database to mark audio as generated
-                articles = self.db.get_articles_for_audio()
+                articles = self.db.get_articles_for_audio_from_date(self.target_date)
                 topic_articles = [a for a in articles if a.get("topic") == topic]
 
+                # Log source information for this topic
+                sources = set()
                 for article in topic_articles:
-                    self.db.update_audio_generated(article["url"], audio_path)
+                    source = article.get("source")
+                    if source:
+                        sources.add(source)
 
+                sources_info = (
+                    ", ".join(sorted(sources)) if sources else "Unknown sources"
+                )
+                self.logger.info(
+                    f"Audio generated for {topic} from sources: {sources_info}"
+                )
+
+                # Update all articles for this topic
+                updated_count = 0
+                for article in topic_articles:
+                    real_url = article.get("real_url")
+                    if real_url:
+                        success = self.db.update_audio_generated(real_url, audio_path)
+                        if success:
+                            updated_count += 1
+
+                self.logger.info(
+                    f"Updated audio status for {updated_count} articles in {topic}"
+                )
                 return audio_path
             else:
                 return None
@@ -248,7 +330,10 @@ class AudioGenerator:
             return {
                 "success": True,
                 "topics_processed": 0,
+                "topics_successful": 0,
+                "topics_failed": 0,
                 "audio_files_generated": 0,
+                "final_audio_path": None,
             }
 
         self.logger.info(f"Found {len(articles)} articles to generate audio for")
@@ -268,6 +353,19 @@ class AudioGenerator:
             )
 
             try:
+                # Generate topic transition if not the first topic
+                if i > 1:
+                    transition_text = self.create_topic_transition_text(topic)
+                    transition_filename = (
+                        f"transition_{i:02d}_{topic.replace(' ', '_')}.mp3"
+                    )
+                    transition_path = self.text_to_speech(
+                        transition_text, transition_filename
+                    )
+                    if transition_path:
+                        audio_files.append(transition_path)
+
+                # Generate main topic summary audio
                 audio_path = self.generate_topic_audio(topic, summary)
 
                 if audio_path:
@@ -297,12 +395,14 @@ class AudioGenerator:
         if outro_path:
             audio_files.append(outro_path)
 
-        # Merge all audio files
+        # Merge all audio files (store in temp directory for now)
         final_audio_path = None
         if audio_files:
             date_str = date.replace("-", "_")
             output_filename = f"daily_digest_{date_str}.mp3"
-            final_audio_path = self.merge_audio_files(audio_files, output_filename)
+            final_audio_path = self.merge_audio_files_to_temp(
+                audio_files, output_filename
+            )
 
         # Summary
         self.logger.info(
