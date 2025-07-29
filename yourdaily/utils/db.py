@@ -516,48 +516,101 @@ class DatabaseManager:
             search_deleted = 0
             article_deleted = 0
 
-            # Clean search_index database
-            with sqlite3.connect(self.search_db_path) as conn:
-                cursor = conn.execute(
-                    "DELETE FROM search_index WHERE published_date < ?", (cutoff_date,)
-                )
-                search_deleted = cursor.rowcount
-                conn.commit()
+            # Clean search_index database - check if table exists first
+            try:
+                with sqlite3.connect(self.search_db_path) as conn:
+                    # Check if search_index table exists
+                    cursor = conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='search_index'"
+                    )
+                    if cursor.fetchone():
+                        cursor = conn.execute(
+                            "DELETE FROM search_index WHERE published_date < ?",
+                            (cutoff_date,),
+                        )
+                        search_deleted = cursor.rowcount
+                        conn.commit()
+                    else:
+                        logger.warning(
+                            "search_index table does not exist, skipping search cleanup"
+                        )
+            except sqlite3.Error as e:
+                logger.warning(f"Could not clean search_index table: {e}")
 
             # Clean article_data database
-            with sqlite3.connect(self.article_db_path) as conn:
-                # First get the URLs to delete
-                cursor = conn.execute(
-                    """
-                    SELECT rss_url, real_url FROM article_data
-                    WHERE id IN (
-                        SELECT ad.id FROM article_data ad
-                        LEFT JOIN (
-                            SELECT rss_url, real_url, published_date
-                            FROM search_index
-                            WHERE published_date >= ?
-                        ) si ON (ad.rss_url = si.rss_url OR ad.real_url = si.real_url)
-                        WHERE si.published_date IS NULL
-                    )
-                    """,
-                    (cutoff_date,),
-                )
-                urls_to_delete = cursor.fetchall()
+            try:
+                with sqlite3.connect(self.article_db_path) as conn:
+                    # Check if we can reference search_index for cleanup
+                    try:
+                        with sqlite3.connect(self.search_db_path) as search_conn:
+                            # Check if search_index table exists
+                            cursor = search_conn.execute(
+                                "SELECT name FROM sqlite_master WHERE type='table' AND name='search_index'"
+                            )
+                            search_table_exists = cursor.fetchone() is not None
 
-                # Delete the article data
-                for rss_url, real_url in urls_to_delete:
-                    if rss_url:
-                        cursor = conn.execute(
-                            "DELETE FROM article_data WHERE rss_url = ?", (rss_url,)
-                        )
-                        article_deleted += cursor.rowcount
-                    if real_url:
-                        cursor = conn.execute(
-                            "DELETE FROM article_data WHERE real_url = ?", (real_url,)
-                        )
-                        article_deleted += cursor.rowcount
+                        if search_table_exists:
+                            # First get the URLs to delete based on search_index
+                            cursor = conn.execute(
+                                """
+                                SELECT rss_url, real_url FROM article_data
+                                WHERE id IN (
+                                    SELECT ad.id FROM article_data ad
+                                    LEFT JOIN (
+                                        SELECT rss_url, real_url, published_date
+                                        FROM search_index
+                                        WHERE published_date >= ?
+                                    ) si ON (ad.rss_url = si.rss_url OR ad.real_url = si.real_url)
+                                    WHERE si.published_date IS NULL
+                                )
+                                """,
+                                (cutoff_date,),
+                            )
+                            urls_to_delete = cursor.fetchall()
 
-                conn.commit()
+                            # Delete the article data
+                            for rss_url, real_url in urls_to_delete:
+                                if rss_url:
+                                    cursor = conn.execute(
+                                        "DELETE FROM article_data WHERE rss_url = ?",
+                                        (rss_url,),
+                                    )
+                                    article_deleted += cursor.rowcount
+                                if real_url:
+                                    cursor = conn.execute(
+                                        "DELETE FROM article_data WHERE real_url = ?",
+                                        (real_url,),
+                                    )
+                                    article_deleted += cursor.rowcount
+                        else:
+                            # Fallback: clean based on date in article_data if we have date info
+                            logger.info(
+                                "search_index table not available, using fallback cleanup method"
+                            )
+                            # Check if article_data has date columns we can use
+                            cursor = conn.execute("PRAGMA table_info(article_data)")
+                            columns = [row[1] for row in cursor.fetchall()]
+
+                            if "inserted_at" in columns:
+                                cursor = conn.execute(
+                                    "DELETE FROM article_data WHERE inserted_at < ?",
+                                    (cutoff_date,),
+                                )
+                                article_deleted = cursor.rowcount
+                            else:
+                                logger.warning(
+                                    "No date column available for article cleanup"
+                                )
+
+                        conn.commit()
+
+                    except sqlite3.Error as e:
+                        logger.warning(
+                            f"Could not access search_index for article cleanup: {e}"
+                        )
+
+            except sqlite3.Error as e:
+                logger.warning(f"Could not clean article_data table: {e}")
 
             logger.info(
                 f"Cleaned {search_deleted} search records and {article_deleted} article records older than {days} days"

@@ -137,53 +137,104 @@ class ArticleSummarizer:
 
         return prompt
 
-    def call_gemini_api(self, prompt: str) -> Optional[str]:
-        """Call Gemini API to generate summary."""
-        try:
-            # Use fake user agent for API calls
-            from yourdaily.utils.user_agent import get_random_user_agent
+    def call_gemini_api(self, prompt: str, max_retries: int = 3) -> Optional[str]:
+        """Call Gemini API to generate summary with retry logic."""
+        import time
 
-            headers = {
-                "Content-Type": "application/json",
-                "X-goog-api-key": self.gemini_api_key,
-                "User-Agent": get_random_user_agent(),
-            }
+        for attempt in range(max_retries):
+            try:
+                # Use fake user agent for API calls
+                from yourdaily.utils.user_agent import get_random_user_agent
 
-            data = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.3,
-                    "topK": 40,
-                    "topP": 0.95,
-                    "maxOutputTokens": 1024,
-                },
-            }
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-goog-api-key": self.gemini_api_key,
+                    "User-Agent": get_random_user_agent(),
+                }
 
-            self.logger.debug("Calling Gemini API...")
-            response = requests.post(
-                self.gemini_url, headers=headers, json=data, timeout=60
-            )
-            response.raise_for_status()
+                data = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "topK": 40,
+                        "topP": 0.95,
+                        "maxOutputTokens": 1024,
+                    },
+                }
 
-            result = response.json()
+                self.logger.debug(
+                    f"Calling Gemini API (attempt {attempt + 1}/{max_retries})..."
+                )
+                response = requests.post(
+                    self.gemini_url, headers=headers, json=data, timeout=120
+                )
+                response.raise_for_status()
 
-            # Extract the generated text
-            if "candidates" in result and len(result["candidates"]) > 0:
-                candidate = result["candidates"][0]
-                if "content" in candidate and "parts" in candidate["content"]:
-                    parts = candidate["content"]["parts"]
-                    if len(parts) > 0 and "text" in parts[0]:
-                        return parts[0]["text"]
+                result = response.json()
 
-            self.logger.error(f"Unexpected response format from Gemini API: {result}")
-            return None
+                # Extract the generated text
+                if "candidates" in result and len(result["candidates"]) > 0:
+                    candidate = result["candidates"][0]
+                    if "content" in candidate and "parts" in candidate["content"]:
+                        parts = candidate["content"]["parts"]
+                        if len(parts) > 0 and "text" in parts[0]:
+                            return parts[0]["text"]
 
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Gemini API request failed: {e}")
-            return None
-        except Exception as e:
-            self.logger.error(f"Error calling Gemini API: {e}")
-            return None
+                self.logger.error(
+                    f"Unexpected response format from Gemini API: {result}"
+                )
+                return None
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 503:
+                    # Service Unavailable - retry with exponential backoff
+                    if attempt < max_retries - 1:
+                        wait_time = (2**attempt) * 5  # 5, 10, 20 seconds
+                        self.logger.warning(
+                            f"Gemini API returned 503 (attempt {attempt + 1}/{max_retries}). Retrying in {wait_time} seconds..."
+                        )
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        self.logger.error(
+                            f"Gemini API failed after {max_retries} attempts: {e}"
+                        )
+                        return None
+                elif e.response.status_code == 429:
+                    # Rate limited - retry with longer backoff
+                    if attempt < max_retries - 1:
+                        wait_time = (2**attempt) * 10  # 10, 20, 40 seconds
+                        self.logger.warning(
+                            f"Gemini API rate limited (attempt {attempt + 1}/{max_retries}). Retrying in {wait_time} seconds..."
+                        )
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        self.logger.error(
+                            f"Gemini API rate limited after {max_retries} attempts: {e}"
+                        )
+                        return None
+                else:
+                    self.logger.error(f"Gemini API HTTP error: {e}")
+                    return None
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    wait_time = (2**attempt) * 3  # 3, 6, 12 seconds
+                    self.logger.warning(
+                        f"Gemini API request failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time} seconds..."
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    self.logger.error(
+                        f"Gemini API request failed after {max_retries} attempts: {e}"
+                    )
+                    return None
+            except Exception as e:
+                self.logger.error(f"Error calling Gemini API: {e}")
+                return None
+
+        return None
 
     def summarize_topic_articles(
         self, topic: str, articles: List[Dict[str, Any]]

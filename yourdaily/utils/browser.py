@@ -24,7 +24,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 class BrowserManager:
     """Manages headless browser operations for article scraping."""
 
-    def __init__(self, headless: bool = True, timeout: int = 30):
+    def __init__(self, headless: bool = True, timeout: int = 120):
         """
         Initialize the browser manager.
 
@@ -38,33 +38,69 @@ class BrowserManager:
 
     def _setup_browser(self) -> webdriver.Chrome:
         """Set up Chrome browser with appropriate options."""
-        chrome_options = Options()
+        try:
+            chrome_options = Options()
 
-        if self.headless:
-            chrome_options.add_argument("--headless")
+            if self.headless:
+                chrome_options.add_argument("--headless")
 
-        # Performance and stability options
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--disable-web-security")
-        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+            # Performance and stability options
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--disable-web-security")
+            chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+            chrome_options.add_argument("--disable-extensions")
+            chrome_options.add_argument("--disable-plugins")
+            chrome_options.add_argument("--disable-images")
+            chrome_options.add_argument("--disable-javascript")
 
-        # User agent to avoid blocking
-        from yourdaily.utils.user_agent import get_chrome_user_agent
+            # Increase timeouts and add stability options
+            chrome_options.add_argument("--page-load-strategy=eager")
+            chrome_options.add_argument("--disable-background-timer-throttling")
+            chrome_options.add_argument("--disable-renderer-backgrounding")
 
-        chrome_options.add_argument(f"--user-agent={get_chrome_user_agent()}")
+            # Add user agent with better error handling
+            try:
+                from yourdaily.utils.user_agent import get_chrome_user_agent
 
-        # Automatically download and manage ChromeDriver
-        service = Service(ChromeDriverManager().install())
+                user_agent = get_chrome_user_agent()
+                chrome_options.add_argument(f"--user-agent={user_agent}")
+            except Exception as e:
+                logger.warning(f"Could not set custom user agent: {e}")
+                # Use a default user agent if the custom one fails
+                chrome_options.add_argument(
+                    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
 
-        return webdriver.Chrome(service=service, options=chrome_options)
+            # Automatically download and manage ChromeDriver with better error handling
+            try:
+                service = Service(ChromeDriverManager().install())
+            except Exception as e:
+                logger.error(f"Failed to setup ChromeDriver: {e}")
+                # Try with system chromedriver as fallback
+                service = Service()
+
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+
+            # Set timeouts
+            driver.set_page_load_timeout(self.timeout)
+            driver.implicitly_wait(10)
+
+            return driver
+
+        except Exception as e:
+            logger.error(f"Failed to setup browser: {e}")
+            raise RuntimeError(f"Browser setup failed: {e}")
 
     def __enter__(self):
         """Context manager entry."""
-        self.driver = self._setup_browser()
-        return self
+        try:
+            self.driver = self._setup_browser()
+            return self
+        except Exception as e:
+            logger.error(f"Failed to initialize browser in context manager: {e}")
+            raise
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - cleanup browser."""
@@ -93,15 +129,19 @@ class BrowserManager:
         try:
             logger.debug(f"Resolving Google News URL: {google_news_url}")
 
-            # Navigate to the Google News URL
-            self.driver.get(google_news_url)
+            # Navigate to the Google News URL with timeout handling
+            try:
+                self.driver.get(google_news_url)
+            except TimeoutException:
+                logger.warning(f"Timeout loading Google News URL: {google_news_url}")
+                return None
 
             # Wait for any JavaScript redirects to complete
-            time.sleep(3)
+            time.sleep(5)
 
             # Try to wait for URL change (redirect)
             try:
-                WebDriverWait(self.driver, 5).until(
+                WebDriverWait(self.driver, 10).until(
                     lambda d: d.current_url != google_news_url
                 )
             except TimeoutException:
@@ -110,45 +150,62 @@ class BrowserManager:
             final_url = self.driver.current_url
 
             # Check if we're still on Google News domain
-            parsed_url = urlparse(final_url)
-            if "news.google.com" in parsed_url.netloc:
-                logger.debug(
-                    "Still on Google News domain, searching for redirect links"
-                )
-
-                # Try to find redirect links in the page
-                try:
-                    # Look for external links that might be the article
-                    links = self.driver.find_elements(By.TAG_NAME, "a")
-
-                    for link in links[:20]:  # Check first 20 links
-                        href = link.get_attribute("href")
-                        if href and self._is_external_link(href):
-                            logger.debug(f"Found potential article link: {href}")
-                            return href
-
-                    # Try clicking the first clickable link to trigger redirect
-                    clickable_links = self.driver.find_elements(
-                        By.CSS_SELECTOR, "a[href*='http']:not([href*='google'])"
+            try:
+                parsed_url = urlparse(final_url)
+                if "news.google.com" in parsed_url.netloc:
+                    logger.debug(
+                        "Still on Google News domain, searching for redirect links"
                     )
 
-                    if clickable_links:
-                        logger.debug("Attempting to click redirect link")
-                        clickable_links[0].click()
-                        time.sleep(2)
+                    # Try to find redirect links in the page
+                    try:
+                        # Look for external links that might be the article
+                        links = self.driver.find_elements(By.TAG_NAME, "a")
 
-                        new_url = self.driver.current_url
-                        if new_url != final_url and "news.google.com" not in new_url:
-                            return new_url
+                        for link in links[:20]:  # Check first 20 links
+                            try:
+                                href = link.get_attribute("href")
+                                if href and self._is_external_link(href):
+                                    logger.debug(
+                                        f"Found potential article link: {href}"
+                                    )
+                                    return href
+                            except Exception as e:
+                                logger.debug(f"Error checking link: {e}")
+                                continue
 
-                except Exception as e:
-                    logger.debug(f"Error searching for redirect links: {e}")
+                        # Try clicking the first clickable link to trigger redirect
+                        clickable_links = self.driver.find_elements(
+                            By.CSS_SELECTOR, "a[href*='http']:not([href*='google'])"
+                        )
 
-                logger.warning("Could not resolve Google News URL to real article")
+                        if clickable_links:
+                            logger.debug("Attempting to click redirect link")
+                            try:
+                                clickable_links[0].click()
+                                time.sleep(3)
+
+                                new_url = self.driver.current_url
+                                if (
+                                    new_url != final_url
+                                    and "news.google.com" not in new_url
+                                ):
+                                    return new_url
+                            except Exception as e:
+                                logger.debug(f"Error clicking redirect link: {e}")
+
+                    except Exception as e:
+                        logger.debug(f"Error searching for redirect links: {e}")
+
+                    logger.warning("Could not resolve Google News URL to real article")
+                    return None
+
+                logger.debug(f"Successfully resolved to: {final_url}")
+                return final_url
+
+            except Exception as e:
+                logger.error(f"Error parsing final URL: {e}")
                 return None
-
-            logger.debug(f"Successfully resolved to: {final_url}")
-            return final_url
 
         except WebDriverException as e:
             logger.error(f"Browser error resolving URL: {e}")
@@ -177,13 +234,21 @@ class BrowserManager:
             # Set page load timeout
             self.driver.set_page_load_timeout(self.timeout)
 
-            # Navigate to the URL
-            self.driver.get(url)
+            # Navigate to the URL with timeout handling
+            try:
+                self.driver.get(url)
+            except TimeoutException:
+                logger.error(f"Timeout loading page: {url}")
+                return None
 
             # Wait for page to load
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
+            try:
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+            except TimeoutException:
+                logger.warning(f"Timeout waiting for page body: {url}")
+                # Continue anyway, we might still have some content
 
             # Get page source
             content = self.driver.page_source
@@ -217,15 +282,11 @@ class BrowserManager:
         Returns:
             Tuple[Optional[str], Optional[str]]: (real_url, content) or (None, None) if failed
         """
-        # First resolve the URL
         real_url = self.resolve_google_news_url(google_news_url)
-
         if not real_url:
             return None, None
 
-        # Then fetch content from the real URL
         content = self.get_page_content(real_url)
-
         return real_url, content
 
     def _is_external_link(self, url: str) -> bool:
@@ -257,7 +318,7 @@ def resolve_google_news_url(
         str: The resolved article URL, or None if failed
     """
     try:
-        with BrowserManager(headless=headless) as browser:
+        with BrowserManager(headless=headless, timeout=120) as browser:
             return browser.resolve_google_news_url(google_news_url)
     except Exception as e:
         logger.error(f"Error in resolve_google_news_url: {e}")
@@ -278,7 +339,7 @@ def fetch_article_content_with_browser(
         str: The page HTML content, or None if failed
     """
     try:
-        with BrowserManager(headless=headless) as browser:
+        with BrowserManager(headless=headless, timeout=120) as browser:
             return browser.get_page_content(url)
     except Exception as e:
         logger.error(f"Error in fetch_article_content_with_browser: {e}")

@@ -111,22 +111,72 @@ class PipelineOrchestrator:
         self.logger.info(f"Target Date: {self.target_date}")
         self.logger.info("=" * 60)
 
-        # Run each module in sequence
+        # Track critical dependencies
+        critical_failures = []
+        can_continue = True
+
+        # Run each module in sequence with dependency checking
         for module_name, module_path in self.modules:
+            # Check if we can continue based on previous failures
+            if not can_continue:
+                self.logger.warning(
+                    f"Skipping {module_name} due to critical failure in dependencies"
+                )
+                self.results[module_name] = {
+                    "success": False,
+                    "duration": 0,
+                    "error": "Skipped due to dependency failure",
+                    "skipped": True,
+                }
+                continue
+
             result = self.run_module(module_name, module_path)
             self.results[module_name] = result
 
-            # If a module fails, we can choose to continue or stop
+            # Handle failures based on module criticality
             if not result["success"]:
-                self.logger.warning(
-                    f"Module {module_name} failed, but continuing with pipeline..."
-                )
+                if module_name == "News Fetching":
+                    # If we can't fetch news, we can't continue meaningfully
+                    self.logger.error(
+                        f"Critical module {module_name} failed - pipeline cannot continue effectively"
+                    )
+                    critical_failures.append(module_name)
+                    can_continue = False
+                elif module_name == "Article Scraping":
+                    # If scraping fails but we have some articles, continue
+                    self.logger.warning(
+                        f"Module {module_name} failed, but pipeline will continue with available data"
+                    )
+                elif module_name == "Article Summarization":
+                    # If summarization fails, we can't generate audio
+                    self.logger.error(
+                        f"Module {module_name} failed - audio generation and publishing will be skipped"
+                    )
+                    critical_failures.append(module_name)
+                    # Don't set can_continue to False yet, let's try to continue but flag downstream modules
+                elif module_name in ["Audio Generation", "Podcast Publishing"]:
+                    # These are dependent on previous steps but not critical for data processing
+                    self.logger.warning(
+                        f"Module {module_name} failed, but data processing was successful"
+                    )
+                else:
+                    self.logger.warning(
+                        f"Module {module_name} failed, but continuing with pipeline..."
+                    )
+
+            # Specific dependency checks
+            if module_name == "Article Summarization" and not result["success"]:
+                # Can't generate audio without summaries
+                can_continue = False
 
         # Calculate total duration
         total_duration = time.time() - self.start_time
 
-        # Summary
+        # Enhanced summary
         successful_modules = sum(1 for r in self.results.values() if r["success"])
+        skipped_modules = sum(
+            1 for r in self.results.values() if r.get("skipped", False)
+        )
         total_modules = len(self.modules)
 
         self.logger.info("=" * 60)
@@ -135,21 +185,55 @@ class PipelineOrchestrator:
         self.logger.info(f"Target Date: {self.target_date}")
         self.logger.info(f"Total Duration: {round(total_duration, 2)}s")
         self.logger.info(f"Successful Modules: {successful_modules}/{total_modules}")
+        if skipped_modules > 0:
+            self.logger.info(f"Skipped Modules: {skipped_modules}")
+        if critical_failures:
+            self.logger.warning(f"Critical Failures: {', '.join(critical_failures)}")
 
         # Detailed results
         for module_name, result in self.results.items():
-            status = "✅" if result["success"] else "❌"
+            if result.get("skipped"):
+                status = "⏭️"
+            else:
+                status = "✅" if result["success"] else "❌"
+
             self.logger.info(
                 f"{status} {module_name}: {result['duration']}s "
                 f"({result.get('error', 'Success')})"
             )
 
+        # Determine overall success
+        pipeline_success = (
+            successful_modules >= 3
+        )  # At least cleanup, fetching, and scraping
+
+        # Provide actionable recommendations
+        if not pipeline_success:
+            self.logger.error("🚨 Pipeline completed with significant failures")
+            if "News Fetching" in critical_failures:
+                self.logger.error(
+                    "💡 Recommendation: Check your internet connection and RSS feed URLs"
+                )
+            if "Article Summarization" in critical_failures:
+                self.logger.error(
+                    "💡 Recommendation: Check your Gemini API key and quota"
+                )
+        elif skipped_modules > 0 or critical_failures:
+            self.logger.warning("⚠️ Pipeline completed with some issues")
+            self.logger.info(
+                "💡 Some functionality may be limited - check individual module errors above"
+            )
+        else:
+            self.logger.info("🎉 Pipeline completed successfully!")
+
         return {
-            "success": successful_modules == total_modules,
+            "success": pipeline_success,
             "target_date": self.target_date,
             "total_duration": round(total_duration, 2),
             "successful_modules": successful_modules,
+            "skipped_modules": skipped_modules,
             "total_modules": total_modules,
+            "critical_failures": critical_failures,
             "results": self.results,
         }
 

@@ -159,9 +159,15 @@ def _resolve_rss_url_to_real_url(rss_url: str, logger) -> Optional[str]:
         # Check if this is a Google News URL that needs resolution
         parsed = urlparse(rss_url)
         if "news.google.com" in parsed.netloc:
-            # Use browser to resolve Google News URL
-            with BrowserManager(headless=True) as browser:
-                real_url = browser.resolve_google_news_url(rss_url)
+            # Use browser to resolve Google News URL with increased timeout
+            try:
+                with BrowserManager(headless=True, timeout=180) as browser:
+                    real_url = browser.resolve_google_news_url(rss_url)
+            except Exception as e:
+                logger.warning(
+                    f"Browser failed to resolve Google News URL {rss_url}: {e}"
+                )
+                return None
 
             if real_url:
                 logger.info(f"Resolved Google News URL to: {real_url}")
@@ -181,22 +187,46 @@ def _resolve_rss_url_to_real_url(rss_url: str, logger) -> Optional[str]:
 
 def _fetch_article_content_with_browser(url: str, logger) -> Optional[str]:
     """Fetch raw HTML content from URL using headless browser."""
-    try:
-        logger.debug(f"Fetching content with browser from: {url}")
+    max_retries = 2
 
-        with BrowserManager(headless=True) as browser:
-            html_content = browser.get_page_content(url)
+    for attempt in range(max_retries):
+        try:
+            logger.debug(
+                f"Fetching content with browser from: {url} (attempt {attempt + 1}/{max_retries})"
+            )
 
-        if not html_content:
-            logger.warning(f"No content retrieved from: {url}")
-            return None
+            with BrowserManager(headless=True, timeout=180) as browser:
+                html_content = browser.get_page_content(url)
 
-        logger.debug(f"Successfully fetched {len(html_content)} characters from: {url}")
-        return html_content
+            if not html_content:
+                if attempt < max_retries - 1:
+                    logger.warning(f"No content retrieved from: {url}, retrying...")
+                    continue
+                else:
+                    logger.warning(
+                        f"No content retrieved from: {url} after {max_retries} attempts"
+                    )
+                    return None
 
-    except Exception as e:
-        logger.error(f"Error fetching content from {url}: {e}")
-        return None
+            logger.debug(
+                f"Successfully fetched {len(html_content)} characters from: {url}"
+            )
+            return html_content
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(
+                    f"Error fetching content from {url} (attempt {attempt + 1}): {e}, retrying..."
+                )
+                time.sleep(2)  # Brief pause before retry
+                continue
+            else:
+                logger.error(
+                    f"Error fetching content from {url} after {max_retries} attempts: {e}"
+                )
+                return None
+
+    return None
 
 
 def _clean_article_content(html_content: str, url: str, logger) -> Optional[str]:
