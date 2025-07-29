@@ -64,9 +64,14 @@ class PipelineOrchestrator:
                     "Article Summarization",
                     "Audio Generation",
                 ]:
-                    # For date-aware modules, we'll need to modify their main functions
-                    # For now, run the standard main function
-                    module.main()
+                    # For date-aware modules, set sys.argv to pass the target date
+                    original_argv = sys.argv.copy()
+                    sys.argv = ["module_main", "--date", self.target_date]
+                    try:
+                        module.main()
+                    finally:
+                        # Restore original sys.argv
+                        sys.argv = original_argv
                 else:
                     module.main()
                 success = True
