@@ -42,21 +42,11 @@ class NewsFetcher:
 
         # Request configuration
         self.session = requests.Session()
-        # Try to use a fake user agent, fall back to a default if unavailable
-        try:
-            from fake_useragent import UserAgent
 
-            ua = UserAgent()
-            user_agent = ua.random
-            self.logger.debug(f"Using fake user agent: {user_agent}")
-        except Exception as e:
-            user_agent = (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            )
-            self.logger.warning(
-                f"Failed to get fake user agent, using default: {user_agent} ({e})"
-            )
+        # Use the user agent utility
+        from yourdaily.utils.user_agent import get_random_user_agent
 
+        user_agent = get_random_user_agent()
         self.session.headers.update({"User-Agent": user_agent})
 
     def load_topics(self) -> List[str]:

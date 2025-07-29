@@ -110,8 +110,12 @@ class ArticleSummarizer:
     def call_gemini_api(self, prompt: str) -> Optional[str]:
         """Call Gemini API to generate summary."""
         try:
+            # Use fake user agent for API calls
+            from yourdaily.utils.user_agent import get_random_user_agent
+
             headers = {
                 "Content-Type": "application/json",
+                "User-Agent": get_random_user_agent(),
             }
 
             data = {
