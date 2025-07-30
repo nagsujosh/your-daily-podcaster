@@ -71,6 +71,7 @@ jobs:
         echo "LOG_FILE=\"logs/podcaster.log\"" >> .env
         echo "PODCAST_FEED_URL=\"https://nagsujosh.github.io/your-daily-podcaster/podcast.xml\"" >> .env
         echo "AUDIO_BASE_URL=\"https://nagsujosh.github.io/your-daily-podcaster/\"" >> .env
+        echo "PODCAST_OWNER_EMAIL=\"${{ secrets.PODCAST_OWNER_EMAIL }}\"" >> .env
 
     - name: Setup Google Cloud credentials
       run: |
@@ -132,4 +133,3 @@ jobs:
     - name: Clean up old files
       run: |
         find data/audio -type f -mtime +7 -delete
-
