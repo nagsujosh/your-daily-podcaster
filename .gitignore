@@ -68,3 +68,7 @@ Thumbs.db
 
 # Secrets
 .secrets/
+
+# Data
+data/audio/
+data/db/
