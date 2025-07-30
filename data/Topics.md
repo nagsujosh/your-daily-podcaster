@@ -5,4 +5,6 @@ last_updated: "2025-07-28"
 topics:
   - "AI"
   - "Robotics"
+  - "Bangladesh"
+  - US"
 ---
