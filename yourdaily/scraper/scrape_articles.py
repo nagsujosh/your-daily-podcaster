@@ -53,12 +53,22 @@ def process_single_article(
         result = _scrape_single_article(article, db, logger, request_delay)
         return result
     except Exception as e:
-        logger.error(f"Error in process {mp.current_process().pid}: {e}")
-        return {
-            "success": False,
-            "article_title": article.get("title", "Unknown"),
-            "error": str(e),
-        }
+        if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+            logger.warning(
+                f"Process {mp.current_process().pid} timed out after 60s for article: {article.get('title', 'Unknown')[:60]}... - skipping gracefully"
+            )
+            return {
+                "success": False,
+                "article_title": article.get("title", "Unknown"),
+                "error": "Timeout after 60s - skipped gracefully",
+            }
+        else:
+            logger.error(f"Error in process {mp.current_process().pid}: {e}")
+            return {
+                "success": False,
+                "article_title": article.get("title", "Unknown"),
+                "error": str(e),
+            }
 
 
 def _scrape_single_article(
@@ -159,14 +169,19 @@ def _resolve_rss_url_to_real_url(rss_url: str, logger) -> Optional[str]:
         # Check if this is a Google News URL that needs resolution
         parsed = urlparse(rss_url)
         if "news.google.com" in parsed.netloc:
-            # Use browser to resolve Google News URL with increased timeout
+            # Use browser to resolve Google News URL with reduced timeout for graceful handling
             try:
-                with BrowserManager(headless=True, timeout=180) as browser:
+                with BrowserManager(headless=True, timeout=60) as browser:
                     real_url = browser.resolve_google_news_url(rss_url)
             except Exception as e:
-                logger.warning(
-                    f"Browser failed to resolve Google News URL {rss_url}: {e}"
-                )
+                if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                    logger.warning(
+                        f"Timeout resolving Google News URL {rss_url} after 60s - skipping gracefully: {e}"
+                    )
+                else:
+                    logger.warning(
+                        f"Browser failed to resolve Google News URL {rss_url}: {e}"
+                    )
                 return None
 
             if real_url:
@@ -195,7 +210,7 @@ def _fetch_article_content_with_browser(url: str, logger) -> Optional[str]:
                 f"Fetching content with browser from: {url} (attempt {attempt + 1}/{max_retries})"
             )
 
-            with BrowserManager(headless=True, timeout=180) as browser:
+            with BrowserManager(headless=True, timeout=60) as browser:
                 html_content = browser.get_page_content(url)
 
             if not html_content:
@@ -214,17 +229,31 @@ def _fetch_article_content_with_browser(url: str, logger) -> Optional[str]:
             return html_content
 
         except Exception as e:
-            if attempt < max_retries - 1:
+            if "timeout" in str(e).lower() or "timed out" in str(e).lower():
                 logger.warning(
-                    f"Error fetching content from {url} (attempt {attempt + 1}): {e}, retrying..."
+                    f"Timeout fetching content from {url} after 60s (attempt {attempt + 1}): {e}"
                 )
-                time.sleep(2)  # Brief pause before retry
-                continue
+                if attempt < max_retries - 1:
+                    logger.info("Retrying with fresh browser session...")
+                    time.sleep(1)  # Brief pause before retry
+                    continue
+                else:
+                    logger.warning(
+                        f"Failed to fetch content from {url} after {max_retries} timeout attempts - skipping gracefully"
+                    )
+                    return None
             else:
-                logger.error(
-                    f"Error fetching content from {url} after {max_retries} attempts: {e}"
-                )
-                return None
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Error fetching content from {url} (attempt {attempt + 1}): {e}, retrying..."
+                    )
+                    time.sleep(2)  # Brief pause before retry
+                    continue
+                else:
+                    logger.error(
+                        f"Error fetching content from {url} after {max_retries} attempts: {e}"
+                    )
+                    return None
 
     return None
 
@@ -369,15 +398,30 @@ class ArticleScraper:
                             self.logger.info(f"✓ {result['article_title'][:60]}...")
                         else:
                             failed += 1
-                            self.logger.error(
-                                f"✗ {result['article_title'][:60]}... - "
-                                f"{result.get('error', 'Unknown error')}"
-                            )
+                            error_msg = result.get("error", "Unknown error")
+                            if (
+                                "timeout" in error_msg.lower()
+                                or "timed out" in error_msg.lower()
+                            ):
+                                self.logger.warning(
+                                    f"⚠ {result['article_title'][:60]}... - {error_msg}"
+                                )
+                            else:
+                                self.logger.error(
+                                    f"✗ {result['article_title'][:60]}... - {error_msg}"
+                                )
 
                     except Exception as e:
                         failed += 1
                         title = article.get("title", "Unknown")
-                        self.logger.error(f"✗ {title[:60]}... - Process exception: {e}")
+                        if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                            self.logger.warning(
+                                f"⚠ {title[:60]}... - Process timeout: {e}"
+                            )
+                        else:
+                            self.logger.error(
+                                f"✗ {title[:60]}... - Process exception: {e}"
+                            )
 
         except Exception as e:
             self.logger.error(f"Multiprocessing execution failed: {e}")

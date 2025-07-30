@@ -3,11 +3,10 @@
 Unit tests for yourdaily.utils.browser module.
 """
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.chrome.options import Options
 
 from yourdaily.utils.browser import (
     BrowserManager,
@@ -24,7 +23,7 @@ class TestBrowserManager:
         browser = BrowserManager()
 
         assert browser.headless is True
-        assert browser.timeout == 30
+        assert browser.timeout == 60
         assert browser.driver is None
 
     def test_init_custom_parameters(self):
@@ -45,7 +44,7 @@ class TestBrowserManager:
         mock_driver_manager.return_value.install.return_value = "/path/to/chromedriver"
         browser = BrowserManager(headless=True)
 
-        result = browser._setup_browser()
+        browser._setup_browser()
 
         # Verify ChromeDriverManager was used
         mock_driver_manager.assert_called_once()
@@ -69,7 +68,7 @@ class TestBrowserManager:
         mock_driver_manager.return_value.install.return_value = "/path/to/chromedriver"
         browser = BrowserManager(headless=False)
 
-        result = browser._setup_browser()
+        browser._setup_browser()
 
         # Verify Chrome was initialized
         mock_chrome.assert_called_once()
@@ -89,7 +88,7 @@ class TestBrowserManager:
         mock_driver_manager.return_value.install.return_value = "/path/to/chromedriver"
         browser = BrowserManager()
 
-        result = browser._setup_browser()
+        browser._setup_browser()
 
         call_args = mock_chrome.call_args
         options = call_args[1]["options"]

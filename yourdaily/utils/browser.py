@@ -24,7 +24,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 class BrowserManager:
     """Manages headless browser operations for article scraping."""
 
-    def __init__(self, headless: bool = True, timeout: int = 120):
+    def __init__(self, headless: bool = True, timeout: int = 60):
         """
         Initialize the browser manager.
 
@@ -100,6 +100,11 @@ class BrowserManager:
             return self
         except Exception as e:
             logger.error(f"Failed to initialize browser in context manager: {e}")
+            # For timeout-related errors, log as warning and re-raise for graceful handling
+            if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                logger.warning(
+                    f"Browser initialization timed out after {self.timeout}s - will skip this operation"
+                )
             raise
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -318,7 +323,7 @@ def resolve_google_news_url(
         str: The resolved article URL, or None if failed
     """
     try:
-        with BrowserManager(headless=headless, timeout=120) as browser:
+        with BrowserManager(headless=headless, timeout=60) as browser:
             return browser.resolve_google_news_url(google_news_url)
     except Exception as e:
         logger.error(f"Error in resolve_google_news_url: {e}")
@@ -339,7 +344,7 @@ def fetch_article_content_with_browser(
         str: The page HTML content, or None if failed
     """
     try:
-        with BrowserManager(headless=headless, timeout=120) as browser:
+        with BrowserManager(headless=headless, timeout=60) as browser:
             return browser.get_page_content(url)
     except Exception as e:
         logger.error(f"Error in fetch_article_content_with_browser: {e}")
