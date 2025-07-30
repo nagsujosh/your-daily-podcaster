@@ -8,7 +8,6 @@ Generates RSS feeds and publishes podcasts to various platforms
 import json
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -17,19 +16,14 @@ from dotenv import load_dotenv
 from yourdaily.cleaner.cleanup import CleanupUtility
 from yourdaily.utils.db import DatabaseManager
 from yourdaily.utils.logger import get_logger, setup_logger
+
+# RSS feed generation
+from yourdaily.utils.rss_generator import RSSGenerator
 from yourdaily.utils.time import (
     format_duration,
     get_current_timestamp,
     get_yesterday_date,
 )
-
-# RSS feed generation
-try:
-    from feedgen.feed import FeedGenerator
-
-    RSS_AVAILABLE = True
-except ImportError:
-    RSS_AVAILABLE = False
 
 
 class PodcastPublisher:
@@ -150,68 +144,57 @@ class PodcastPublisher:
 
     def create_rss_feed(self, audio_path: str) -> Optional[str]:
         """Create an RSS feed for the podcast."""
-        if not RSS_AVAILABLE:
-            self.logger.error("RSS feed generation not available (feedgen)")
-            return None
-
         try:
-            # Create feed generator
-            fg = FeedGenerator()
-            fg.load_extension("podcast")
-
-            # Set feed metadata
-            fg.title(self.podcast_title)
-            fg.description(self.podcast_description)
-            fg.author({"name": self.podcast_author})
-            fg.language(self.podcast_language)
-            fg.link(href=self.feed_url, rel="self")
-            fg.logo(f"{self.audio_base_url}logo.png")
-
-            # Set podcast-specific metadata
-            fg.podcast.itunes_category(self.podcast_category)
-            fg.podcast.itunes_author(self.podcast_author)
-            fg.podcast.itunes_summary(self.podcast_description)
-            fg.podcast.itunes_explicit("no")
-            
-            # Set owner information (required by Spotify)
-            if self.podcast_email:
-                fg.podcast.itunes_owner(self.podcast_author, self.podcast_email)
-            else:
-                self.logger.warning("No email configured for podcast owner - this may prevent Spotify submission")
-
-            # Create episode entry
+            # Get episode metadata
             date = get_yesterday_date()
             episode_title = f"Daily News Digest - {date}"
-
-            # Get audio metadata
             duration = self.get_audio_duration(audio_path)
             size = self.get_audio_size(audio_path)
 
             # Create episode URL
             episode_url = f"{self.audio_base_url}{Path(audio_path).name}"
 
-            # Create episode entry
-            fe = fg.add_entry()
-            fe.title(episode_title)
-            fe.description(f"Your daily news digest for {date}")
-            fe.published(datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc))
-            fe.id(episode_url)
+            # Warn if no email configured for Spotify submission
+            if not self.podcast_email:
+                self.logger.warning(
+                    "No email configured for podcast owner - this may prevent Spotify submission"
+                )
 
-            # Add audio enclosure
-            if size:
-                fe.enclosure(episode_url, str(size), "audio/mpeg")
+            # Create RSS generator
+            generator = RSSGenerator()
 
-            # Add podcast-specific metadata
-            fe.podcast.itunes_duration(duration or "00:00")
-            fe.podcast.itunes_summary(f"Your daily news digest for {date}")
+            # Set channel information
+            generator.set_channel_info(
+                title=self.podcast_title,
+                description=self.podcast_description,
+                link=self.feed_url,
+                language=self.podcast_language,
+                author=self.podcast_author,
+                category=self.podcast_category,
+                owner_name=self.podcast_author,
+                owner_email=self.podcast_email,
+                explicit=False,
+            )
 
-            # Generate RSS feed
-            rss_content = fg.rss_str(pretty=True)
+            # Add episode if we have required data
+            if size and duration:
+                generator.add_episode(
+                    title=episode_title,
+                    description=f"Your daily news digest for {date}",
+                    audio_url=episode_url,
+                    audio_size=size,
+                    duration=duration,
+                    pub_date=date,
+                    guid=episode_url,
+                )
+            else:
+                self.logger.warning(
+                    f"Missing episode metadata - size: {size}, duration: {duration}"
+                )
 
             # Save RSS feed
             rss_path = self.audio_dir / "podcast.xml"
-            with open(rss_path, "wb") as f:
-                f.write(rss_content)
+            generator.save_to_file(rss_path)
 
             self.logger.info(f"RSS feed created: {rss_path}")
             return str(rss_path)
