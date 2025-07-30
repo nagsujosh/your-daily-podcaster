@@ -7,7 +7,7 @@
     <atom:link href="https://nagsujosh.github.io/your-daily-podcaster/podcast.xml" rel="self" />
     <docs>http://www.rssboard.org/rss-specification</docs>
     <language>en-US</language>
-    <lastBuildDate>Wed, 30 Jul 2025 04:26:10 +0000</lastBuildDate>
+    <lastBuildDate>Wed, 30 Jul 2025 13:43:20 +0000</lastBuildDate>
     <itunes:author>Your Daily Podcaster</itunes:author>
     <itunes:category text="News" />
     <itunes:explicit>no</itunes:explicit>
@@ -20,9 +20,9 @@
       <title>Daily News Digest - 2025-07-29</title>
       <description>Your daily news digest for 2025-07-29</description>
       <guid isPermaLink="false">https://nagsujosh.github.io/your-daily-podcaster/daily_digest_2025_07_29.mp3</guid>
-      <enclosure url="https://nagsujosh.github.io/your-daily-podcaster/daily_digest_2025_07_29.mp3" length="2980077" type="audio/mpeg" />
+      <enclosure url="https://nagsujosh.github.io/your-daily-podcaster/daily_digest_2025_07_29.mp3" length="2255565" type="audio/mpeg" />
       <pubDate>Tue, 29 Jul 2025 00:00:00 +0000</pubDate>
-      <itunes:duration>12:24</itunes:duration>
+      <itunes:duration>09:23</itunes:duration>
       <itunes:summary>Your daily news digest for 2025-07-29</itunes:summary>
     </item>
   </channel>
