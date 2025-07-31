@@ -12,6 +12,64 @@ An automated podcast generation system that fetches news articles, summarizes th
 - **Date-Based Processing**: Ensures only yesterday's articles are processed
 - **Automatic Cleanup**: Maintains clean databases with configurable retention
 
+## Workflow Overview
+
+The following diagram shows how the complete podcast generation pipeline works:
+
+```mermaid
+flowchart TD
+    %% Input Configuration
+    Topics["`**Topics.md**<br/>AI, Robotics,<br/>Bangladesh, US`"] 
+    Env["`**Environment Variables**<br/>GEMINI_KEY<br/>GCLOUD_TTS_CREDS<br/>Database Paths`"]
+    
+    %% Main Pipeline Flow
+    Start(["`**Daily Pipeline Start**<br/>Target: Yesterday's Date`"]) --> PreClean["`**Pre-Cleanup**<br/>Remove data >3 days old`"]
+    
+    PreClean --> NewsFetch["`**News Fetching**<br/>Google News RSS<br/>by Topic`"]
+    Topics --> NewsFetch
+    Env --> NewsFetch
+    
+    NewsFetch --> SearchDB[("`**search_index.db**<br/>Article Metadata<br/>- title, source<br/>- rss_url, real_url<br/>- published_date`")]
+    
+    SearchDB --> ArticleScrape["`**Article Scraping**<br/>Headless Browser<br/>Extract Clean Text`"]
+    
+    ArticleScrape --> ArticleDB[("`**article_data.db**<br/>Article Content<br/>- clean_text<br/>- summarized_text<br/>- audio_path`")]
+    
+    ArticleDB --> Summarize["`**AI Summarization**<br/>Gemini API<br/>By Topic Groups`"]
+    Env --> Summarize
+    
+    Summarize --> ArticleDB
+    ArticleDB --> AudioGen["`**Audio Generation**<br/>Google Cloud TTS<br/>Create MP3 Files`"]
+    Env --> AudioGen
+    
+    AudioGen --> AudioFiles["`**Audio Files**<br/>daily_digest_*.mp3<br/>metadata_*.json`"]
+    
+    AudioFiles --> Publish["`**Podcast Publishing**<br/>Generate RSS Feed<br/>Deploy to GitHub Pages`"]
+    
+    Publish --> RSS["`**RSS Feed**<br/>podcast.xml<br/>Public Access`"]
+    Publish --> GitHub["`**GitHub Pages**<br/>Audio Hosting<br/>Web Access`"]
+    
+    Publish --> PostClean["`**Post-Cleanup**<br/>Remove Temp Files`"]
+    
+    PostClean --> End(["`**Pipeline Complete**<br/>Daily Podcast Ready`"])
+    
+    %% Automation
+    Schedule["`**GitHub Actions**<br/>Daily @ 8:00 AM UTC<br/>Automated Deployment`"] --> Start
+    
+    %% Data Flow Styling
+    classDef inputNode fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef processNode fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef databaseNode fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
+    classDef outputNode fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef automationNode fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    
+    class Topics,Env inputNode
+    class PreClean,NewsFetch,ArticleScrape,Summarize,AudioGen,Publish,PostClean processNode
+    class SearchDB,ArticleDB databaseNode
+    class AudioFiles,RSS,GitHub,End outputNode
+    class Schedule,Start automationNode
+```
+
 ## Date-Based Processing
 
 The system is designed to process **only yesterday's articles** to ensure fresh, relevant content. This is enforced throughout the entire pipeline:
